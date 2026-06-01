@@ -1,13 +1,155 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* ══════════════════════════════════════════════════
+   COMBINED ROVER DASHBOARD — Global Styles
+   Dark glassmorphism design system
+   ══════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-deep:     #020710;
+  --bg-dark:     #050b17;
+  --bg-card:     rgba(5, 11, 23, 0.80);
+  --accent:      #00d4ff;
+  --accent-dim:  rgba(0, 212, 255, 0.18);
+  --accent-glow: rgba(0, 212, 255, 0.25);
+  --green:       #52c41a;
+  --orange:      #ffa940;
+  --red:         #ff4d4f;
+  --purple:      #b37feb;
+  --text-primary:   rgba(220, 240, 255, 0.92);
+  --text-secondary: rgba(140, 180, 220, 0.65);
+  --border:      rgba(0, 212, 255, 0.18);
+  --glass-blur:  blur(14px);
+  --font-sans:   'Inter', sans-serif;
+  --font-mono:   'JetBrains Mono', monospace;
+  --nav-h:       56px;
+  --sidebar-w:   220px;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
 }
+
+body {
+  font-family: var(--font-sans);
+  background: radial-gradient(ellipse at 15% 15%, #0d1e3b 0%, var(--bg-dark) 55%, var(--bg-deep) 100%);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scanlines overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 2px,
+    rgba(0,212,255,0.012) 2px, rgba(0,212,255,0.012) 4px
+  );
+}
+
+/* ── Glass card ── */
+.glass {
+  background: var(--bg-card);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+/* ── Scrollbars ── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--accent-dim); border-radius: 4px; }
+
+/* ── Buttons ── */
+.btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 5px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.22s ease;
+  letter-spacing: 0.06em;
+}
+.btn-primary {
+  background: rgba(0,212,255,0.12);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+.btn-primary:hover { background: rgba(0,212,255,0.22); box-shadow: 0 0 14px rgba(0,212,255,0.3); }
+.btn-danger { background: rgba(255,77,79,0.08); border: 1px solid rgba(255,77,79,0.3); color: rgba(255,77,79,0.7); }
+.btn-danger:hover { background: rgba(255,77,79,0.18); }
+.btn-success { background: rgba(82,196,26,0.08); border: 1px solid rgba(82,196,26,0.35); color: rgba(82,196,26,0.75); }
+.btn-success:hover { background: rgba(82,196,26,0.2); box-shadow: 0 0 10px rgba(82,196,26,0.3); }
+.btn-success.active { background: rgba(82,196,26,0.22); color: var(--green); box-shadow: 0 0 14px rgba(82,196,26,0.4); }
+
+/* ── Status dot ── */
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+  transition: background 0.3s, box-shadow 0.3s;
+}
+.status-dot.online  { background: var(--green);  box-shadow: 0 0 8px var(--green),  0 0 16px rgba(82,196,26,0.4); }
+.status-dot.offline { background: var(--red);    box-shadow: 0 0 8px var(--red); }
+.status-dot.warning { background: var(--orange); box-shadow: 0 0 8px var(--orange); }
+
+/* ── Badge ── */
+.badge {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.1em;
+}
+.badge-sim     { background: rgba(82,196,26,0.12);  border: 1px solid rgba(82,196,26,0.3);   color: var(--green); }
+.badge-arduino { background: rgba(0,212,255,0.10);  border: 1px solid rgba(0,212,255,0.25);  color: var(--accent); }
+.badge-legacy  { background: rgba(179,127,235,0.1); border: 1px solid rgba(179,127,235,0.3); color: var(--purple); }
+
+/* ── Stat card ── */
+.stat-card {
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: var(--bg-card);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border);
+  border-left-width: 2px;
+}
+.stat-card .label { font-family: var(--font-mono); font-size: 9px; color: var(--text-secondary); letter-spacing: 0.2em; margin-bottom: 4px; }
+.stat-card .value { font-family: var(--font-mono); font-size: 22px; font-weight: 700; line-height: 1.1; }
+.stat-card .unit  { font-size: 11px; font-weight: 400; margin-left: 3px; opacity: 0.7; }
+.stat-card .sub   { font-size: 9px; color: var(--text-secondary); margin-top: 3px; }
+
+/* ── Table ── */
+.data-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 11px; }
+.data-table th {
+  padding: 8px 12px; text-align: left;
+  color: var(--text-secondary); font-weight: 500;
+  border-bottom: 1px solid var(--border);
+  letter-spacing: 0.12em; font-size: 9px;
+}
+.data-table td { padding: 7px 12px; border-bottom: 1px solid rgba(0,212,255,0.06); }
+.data-table tr:hover td { background: rgba(0,212,255,0.04); }
+
+/* ── Alert item ── */
+.alert-item {
+  padding: 12px 16px; border-radius: 8px;
+  background: var(--bg-card);
+  border-left: 3px solid var(--red);
+  margin-bottom: 8px;
+}
+.alert-item.warning { border-left-color: var(--orange); }
+.alert-item .alert-type { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; }
+.alert-item .alert-msg  { font-size: 13px; margin: 4px 0; }
+.alert-item .alert-time { font-family: var(--font-mono); font-size: 9px; color: var(--text-secondary); }
+
+/* ── Pulse animation ── */
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+.pulse { animation: pulse 2s ease-in-out infinite; }
+
+/* ── Glow text ── */
+.glow-text { text-shadow: 0 0 12px currentColor; }
