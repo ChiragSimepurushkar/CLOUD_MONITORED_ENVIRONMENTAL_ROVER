@@ -1,5 +1,5 @@
 import './index.css';
-import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import Dashboard from './pages/Dashboard';
@@ -9,72 +9,153 @@ import Alerts    from './pages/Alerts';
 
 const SERVER = process.env.REACT_APP_SERVER_URL || 'http://localhost:5000';
 const socket = io(SERVER, { transports: ['websocket', 'polling'] });
-
 export { socket, SERVER };
 
-const mono = { fontFamily: 'var(--font-mono)' };
-const sans = { fontFamily: 'var(--font-sans)' };
+const M = { fontFamily: 'var(--font-mono)' };
+const S = { fontFamily: 'var(--font-sans)' };
 
-const NAV_ITEMS = [
-  { to: '/',        icon: '📊', label: 'Dashboard'  },
-  { to: '/map3d',   icon: '🛰',  label: '3D Live Map' },
-  { to: '/history', icon: '📈', label: 'Analytics'  },
-  { to: '/alerts',  icon: '🚨', label: 'Alerts'     },
+const NAV = [
+  { to: '/',        emoji: '📊', icon: 'M3 3h18v4H3zM3 9h12v4H3zM3 15h8v4H3z',  label: 'Dashboard',  sub: 'Live Overview' },
+  { to: '/map3d',   emoji: '🗺',  icon: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5', label: '3D Map',  sub: 'Spatial Tracking' },
+  { to: '/history', emoji: '📈', icon: 'M3 3v18h18M7 16l4-4 4 4 4-6',           label: 'Analytics',  sub: 'Data History' },
+  { to: '/alerts',  emoji: '🚨', icon: 'M12 2L2 7l10 5 10-5M2 12l10 5 10-5',    label: 'Alerts',     sub: 'Hazard Log' },
 ];
 
-function Sidebar({ connected, packetCount, lastTs }) {
-  useLocation(); // keep for future active-link styling
+function NavItem({ to, emoji, label, sub, alertCount }) {
+  return (
+    <NavLink to={to} end={to === '/'} style={({ isActive }) => ({
+      display: 'block',
+      textDecoration: 'none',
+      padding: '10px 14px',
+      margin: '2px 10px',
+      borderRadius: '10px',
+      background: isActive ? 'rgba(0,212,255,0.10)' : 'transparent',
+      border: isActive ? '1px solid rgba(0,212,255,0.25)' : '1px solid transparent',
+      boxShadow: isActive ? 'inset 0 0 20px rgba(0,212,255,0.05)' : 'none',
+      transition: 'all 0.2s ease',
+      position: 'relative',
+    })}>
+      {({ isActive }) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 8, flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 18,
+            background: isActive ? 'rgba(0,212,255,0.15)' : 'rgba(255,255,255,0.04)',
+            border: `1px solid ${isActive ? 'rgba(0,212,255,0.35)' : 'rgba(255,255,255,0.06)'}`,
+            boxShadow: isActive ? '0 0 12px rgba(0,212,255,0.3)' : 'none',
+            transition: 'all 0.2s',
+          }}>{emoji}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              ...M, fontSize: 12, fontWeight: 600, letterSpacing: '0.05em',
+              color: isActive ? 'var(--accent)' : 'rgba(200,225,255,0.75)',
+              textShadow: isActive ? '0 0 10px rgba(0,212,255,0.5)' : 'none',
+              marginBottom: 2,
+            }}>{label}</div>
+            <div style={{ ...M, fontSize: 9, color: 'var(--text-dim)', letterSpacing: '0.08em' }}>{sub}</div>
+          </div>
+          {alertCount > 0 && (
+            <div style={{
+              ...M, fontSize: 8, fontWeight: 700,
+              background: 'var(--red)', color: 'white',
+              borderRadius: '10px', padding: '2px 6px', minWidth: 18, textAlign: 'center',
+            }}>{alertCount}</div>
+          )}
+          {isActive && (
+            <div style={{
+              position: 'absolute', right: -10, top: '50%', transform: 'translateY(-50%)',
+              width: 3, height: 24, background: 'var(--accent)',
+              borderRadius: '2px 0 0 2px',
+              boxShadow: '0 0 8px var(--accent)',
+            }} />
+          )}
+        </div>
+      )}
+    </NavLink>
+  );
+}
+
+function Sidebar({ connected, packetCount, lastTs, alertCount }) {
   return (
     <div style={{
       position: 'fixed', top: 0, left: 0, bottom: 0,
       width: 'var(--sidebar-w)', zIndex: 100,
-      background: 'rgba(3,8,18,0.96)',
+      background: 'linear-gradient(180deg, rgba(6,12,24,0.98) 0%, rgba(3,5,12,0.99) 100%)',
       borderRight: '1px solid var(--border)',
-      backdropFilter: 'blur(20px)',
+      backdropFilter: 'blur(24px)',
       display: 'flex', flexDirection: 'column',
-      padding: '0 0 16px',
+      overflow: 'hidden',
     }}>
-      {/* Logo */}
-      <div style={{ padding: '18px 20px 14px', borderBottom: '1px solid rgba(0,212,255,0.12)' }}>
-        <div style={{ ...mono, fontSize: 11, color: 'var(--accent)', letterSpacing: '0.18em', fontWeight: 700,
-          textShadow: '0 0 12px rgba(0,212,255,0.5)', marginBottom: 2 }}>🛰 ROVER TWIN</div>
-        <div style={{ ...mono, fontSize: 8, color: 'var(--text-secondary)', letterSpacing: '0.14em' }}>ENVIRONMENTAL MONITOR</div>
-      </div>
+      {/* Top accent line */}
+      <div style={{ height: 2, background: 'linear-gradient(90deg, var(--accent), var(--purple), transparent)', flexShrink: 0 }} />
 
-      {/* Connection status */}
-      <div style={{ padding: '12px 20px', borderBottom: '1px solid rgba(0,212,255,0.08)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-          <span className={`status-dot ${connected ? 'online' : 'offline'}`} />
-          <span style={{ ...mono, fontSize: 10, color: connected ? 'var(--green)' : 'var(--red)' }}>
-            {connected ? 'LIVE' : 'OFFLINE'}
-          </span>
+      {/* Logo area */}
+      <div style={{ padding: '20px 18px 16px', borderBottom: '1px solid rgba(0,212,255,0.08)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+            background: 'linear-gradient(135deg, rgba(0,212,255,0.2), rgba(124,58,237,0.2))',
+            border: '1px solid rgba(0,212,255,0.3)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 22, boxShadow: '0 0 16px rgba(0,212,255,0.2)',
+          }}>🛰</div>
+          <div>
+            <div style={{ ...M, fontSize: 12, fontWeight: 700, color: 'var(--accent)', letterSpacing: '0.12em',
+              textShadow: '0 0 12px rgba(0,212,255,0.5)' }}>ROVER TWIN</div>
+            <div style={{ ...M, fontSize: 8, color: 'var(--text-dim)', letterSpacing: '0.16em', marginTop: 2 }}>
+              ENV MONITOR v3.0
+            </div>
+          </div>
         </div>
-        <div style={{ ...mono, fontSize: 8, color: 'var(--text-secondary)' }}>Packets: {packetCount}</div>
-        {lastTs && <div style={{ ...mono, fontSize: 8, color: 'var(--text-secondary)', marginTop: 2 }}>Last: {lastTs}</div>}
       </div>
 
-      {/* Nav links */}
-      <nav style={{ flex: 1, padding: '8px 0' }}>
-        {NAV_ITEMS.map(({ to, icon, label }) => (
-          <NavLink key={to} to={to} end={to === '/'} style={({ isActive }) => ({
-            display: 'flex', alignItems: 'center', gap: 10,
-            padding: '11px 20px', textDecoration: 'none',
-            ...mono, fontSize: 12, letterSpacing: '0.06em',
-            color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
-            background: isActive ? 'rgba(0,212,255,0.07)' : 'transparent',
-            borderLeft: isActive ? '2px solid var(--accent)' : '2px solid transparent',
-            transition: 'all 0.2s',
-          })}>
-            <span style={{ fontSize: 16 }}>{icon}</span>
-            {label}
-          </NavLink>
+      {/* Live status card */}
+      <div style={{ padding: '12px 18px', borderBottom: '1px solid rgba(0,212,255,0.06)', flexShrink: 0 }}>
+        <div style={{
+          padding: '10px 14px', borderRadius: 10,
+          background: connected ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)',
+          border: `1px solid ${connected ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className={`status-dot ${connected ? 'online' : 'offline'}`} />
+              <span style={{ ...M, fontSize: 10, fontWeight: 600,
+                color: connected ? 'var(--green)' : 'var(--red)',
+                letterSpacing: '0.1em' }}>{connected ? 'LIVE' : 'OFFLINE'}</span>
+            </div>
+            <span style={{ ...M, fontSize: 8, color: 'var(--text-dim)' }}>WebSocket</span>
+          </div>
+          <div style={{ display: 'flex', gap: 14 }}>
+            <div>
+              <div style={{ ...M, fontSize: 7, color: 'var(--text-dim)', letterSpacing: '0.16em', marginBottom: 2 }}>PACKETS</div>
+              <div style={{ ...M, fontSize: 14, fontWeight: 700, color: 'var(--accent)' }}>{packetCount}</div>
+            </div>
+            {lastTs && (
+              <div>
+                <div style={{ ...M, fontSize: 7, color: 'var(--text-dim)', letterSpacing: '0.16em', marginBottom: 2 }}>LAST RX</div>
+                <div style={{ ...M, fontSize: 11, color: 'rgba(200,225,255,0.6)' }}>{lastTs}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <nav style={{ flex: 1, overflowY: 'auto', padding: '10px 0' }}>
+        <div style={{ ...M, fontSize: 8, color: 'var(--text-dim)', letterSpacing: '0.2em', padding: '6px 22px 8px', textTransform: 'uppercase' }}>
+          Navigation
+        </div>
+        {NAV.map(item => (
+          <NavItem key={item.to} {...item} alertCount={item.to === '/alerts' ? alertCount : 0} />
         ))}
       </nav>
 
       {/* Footer */}
-      <div style={{ padding: '0 20px' }}>
-        <div style={{ ...sans, fontSize: 9, color: 'var(--text-secondary)', lineHeight: 1.5, opacity: 0.6 }}>
-          Cloud-Monitored Environmental Rover<br />v3.0 Combined Dashboard
+      <div style={{ padding: '14px 18px', borderTop: '1px solid rgba(0,212,255,0.06)', flexShrink: 0 }}>
+        <div style={{ ...S, fontSize: 9, color: 'var(--text-dim)', lineHeight: 1.7 }}>
+          Cloud-Monitored Environmental Rover<br />
+          <span style={{ ...M, color: 'rgba(0,212,255,0.3)' }}>Chirag Simepurushkar</span>
         </div>
       </div>
     </div>
@@ -85,6 +166,7 @@ export default function App() {
   const [connected,   setConnected]   = useState(false);
   const [packetCount, setPacketCount] = useState(0);
   const [lastTs,      setLastTs]      = useState('');
+  const [alertCount,  setAlertCount]  = useState(0);
 
   useEffect(() => {
     socket.on('connect',    () => setConnected(true));
@@ -93,14 +175,31 @@ export default function App() {
       setPacketCount(e.id);
       setLastTs(new Date(e.ts).toLocaleTimeString());
     });
-    return () => { socket.off('connect'); socket.off('disconnect'); socket.off('raw-data'); };
+    socket.on('newAlert', () => setAlertCount(n => n + 1));
+    return () => {
+      socket.off('connect');
+      socket.off('disconnect');
+      socket.off('raw-data');
+      socket.off('newAlert');
+    };
   }, []);
 
   return (
     <BrowserRouter>
       <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-        <Sidebar connected={connected} packetCount={packetCount} lastTs={lastTs} />
-        <main style={{ marginLeft: 'var(--sidebar-w)', flex: 1, overflow: 'hidden', position: 'relative' }}>
+        <Sidebar
+          connected={connected}
+          packetCount={packetCount}
+          lastTs={lastTs}
+          alertCount={alertCount}
+        />
+        <main style={{
+          marginLeft: 'var(--sidebar-w)',
+          flex: 1,
+          overflow: 'hidden',
+          position: 'relative',
+          background: 'transparent',
+        }}>
           <Routes>
             <Route path="/"        element={<Dashboard />} />
             <Route path="/map3d"   element={<Map3D />} />
