@@ -4,15 +4,14 @@
 //  Upgraded from basic dashboard-code version
 // ══════════════════════════════════════════════════════════════
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  LineChart, Line, AreaChart, Area,
+  AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 import { socket, SERVER } from '../App';
 
 const mono = { fontFamily: 'var(--font-mono)' };
-const sans = { fontFamily: 'var(--font-sans)' };
 
 const glass = {
   background: 'rgba(5,11,23,0.80)',
@@ -75,7 +74,7 @@ export default function Dashboard() {
   const [chart,  setChart]  = useState([]); // rolling 60-point buffer
   const [latest, setLatest] = useState(null);
   const [stats,  setStats]  = useState({ maxGas: 0, maxTemp: 0, minTemp: 0, maxHum: 0, totalReadings: 0, cellsVisited: 0 });
-  const [uptime, setUptime] = useState('—');
+
 
   // Initial fetch
   useEffect(() => {
@@ -87,7 +86,7 @@ export default function Dashboard() {
       if (d.stats) setStats(d.stats);
     }).catch(() => {});
 
-    fetch(`${SERVER}/health`).then(r => r.json()).then(d => setUptime(d.uptime || '—')).catch(() => {});
+    fetch(`${SERVER}/health`).catch(() => {});
   }, []);
 
   // Live updates via socket

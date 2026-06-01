@@ -69,7 +69,9 @@ function GridCell({ gx, gy, cell, mode }) {
   );
 }
 
-// ── Rover Marker ─────────────────────────────────
+// ── Rover 3D Model (matches real bot) ────────────
+//    Red chassis, 4 black/yellow wheels, blue servo
+//    block, Arduino PCB, sonar pole + twin eyes
 function RoverMarker({ rover }) {
   const groupRef = useRef();
   const ringRef  = useRef();
@@ -83,30 +85,96 @@ function RoverMarker({ rover }) {
     const tz = (rover.y / 25) * CELL_SCALE;
     posRef.current.x += (tx - posRef.current.x) * Math.min(1, delta * 3);
     posRef.current.z += (tz - posRef.current.z) * Math.min(1, delta * 3);
-    groupRef.current.position.set(posRef.current.x, 0.5, posRef.current.z);
+    groupRef.current.position.set(posRef.current.x, 0, posRef.current.z);
     groupRef.current.rotation.y = -((rover.heading * Math.PI) / 180);
-    groupRef.current.scale.setScalar(1 + Math.sin(t.current * 3) * 0.07);
     if (ringRef.current) {
       ringRef.current.scale.setScalar(1 + (Math.sin(t.current * 2) * 0.5 + 0.5) * 0.7);
       ringRef.current.material.opacity = 0.7 - (Math.sin(t.current * 2) * 0.5 + 0.5) * 0.5;
     }
   });
 
+  const wheels = [[-0.14, -0.10], [0.14, -0.10], [-0.14, 0.10], [0.14, 0.10]];
+
   return (
     <group ref={groupRef}>
-      <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <coneGeometry args={[0.14, 0.42, 8]} />
-        <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={1.4} roughness={0.1} metalness={0.5} />
+      {/* Pulsing ground ring */}
+      <mesh ref={ringRef} position={[0, 0.001, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.18, 0.28, 36]} />
+        <meshStandardMaterial color="#00d4ff" transparent opacity={0.5} side={THREE.DoubleSide} />
       </mesh>
-      <mesh position={[0, -0.06, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[0.16, 20]} />
-        <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={1.0} transparent opacity={0.8} />
+
+      {/* Red main chassis */}
+      <mesh position={[0, 0.04, 0]} castShadow receiveShadow>
+        <boxGeometry args={[0.30, 0.04, 0.22]} />
+        <meshStandardMaterial color="#cc1515" roughness={0.4} metalness={0.25} emissive="#550000" emissiveIntensity={0.15} />
       </mesh>
-      <mesh ref={ringRef} position={[0, -0.07, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.18, 0.28, 28]} />
-        <meshStandardMaterial color="#00d4ff" transparent opacity={0.6} side={THREE.DoubleSide} />
+
+      {/* Yellow side rails */}
+      {[-1, 1].map((s, i) => (
+        <mesh key={i} position={[0, 0.025, s * 0.092]} castShadow>
+          <boxGeometry args={[0.30, 0.018, 0.016]} />
+          <meshStandardMaterial color="#d4a800" roughness={0.35} metalness={0.45} />
+        </mesh>
+      ))}
+
+      {/* 4 Wheels: black tyre + yellow rim + axle */}
+      {wheels.map(([wx, wz], i) => (
+        <group key={i} position={[wx, 0.04, wz]}>
+          <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
+            <cylinderGeometry args={[0.048, 0.048, 0.036, 18]} />
+            <meshStandardMaterial color="#111111" roughness={0.95} />
+          </mesh>
+          <mesh rotation={[0, 0, Math.PI / 2]}>
+            <cylinderGeometry args={[0.030, 0.030, 0.037, 10]} />
+            <meshStandardMaterial color="#d4a800" roughness={0.3} metalness={0.6} />
+          </mesh>
+          <mesh rotation={[0, 0, Math.PI / 2]}>
+            <cylinderGeometry args={[0.010, 0.010, 0.055, 8]} />
+            <meshStandardMaterial color="#888888" metalness={0.8} roughness={0.2} />
+          </mesh>
+        </group>
+      ))}
+
+      {/* Arduino PCB (blue) */}
+      <mesh position={[0.01, 0.072, 0.015]} castShadow>
+        <boxGeometry args={[0.12, 0.007, 0.08]} />
+        <meshStandardMaterial color="#1a5fb4" roughness={0.5} emissive="#002244" emissiveIntensity={0.4} />
       </mesh>
-      <pointLight color="#00d4ff" intensity={2.0} distance={2.0} decay={2} />
+
+      {/* Motor shield (black layer on Arduino) */}
+      <mesh position={[0.01, 0.081, 0.015]} castShadow>
+        <boxGeometry args={[0.10, 0.006, 0.068]} />
+        <meshStandardMaterial color="#1a1a1a" roughness={0.7} />
+      </mesh>
+
+      {/* Blue servo/mount base */}
+      <mesh position={[-0.05, 0.087, -0.045]} castShadow>
+        <boxGeometry args={[0.055, 0.055, 0.050]} />
+        <meshStandardMaterial color="#1a3a8a" roughness={0.4} metalness={0.2} />
+      </mesh>
+
+      {/* Sonar pole */}
+      <mesh position={[-0.05, 0.137, -0.045]} castShadow>
+        <boxGeometry args={[0.018, 0.060, 0.018]} />
+        <meshStandardMaterial color="#223399" roughness={0.45} />
+      </mesh>
+
+      {/* Sonar sensor body */}
+      <mesh position={[-0.05, 0.180, -0.047]} castShadow>
+        <boxGeometry args={[0.060, 0.022, 0.038]} />
+        <meshStandardMaterial color="#999999" roughness={0.3} metalness={0.55} />
+      </mesh>
+
+      {/* HC-SR04 twin eyes */}
+      {[-0.017, 0.017].map((ox, i) => (
+        <mesh key={i} position={[-0.05 + ox, 0.180, -0.068]}>
+          <cylinderGeometry args={[0.009, 0.009, 0.012, 14]} />
+          <meshStandardMaterial color="#cccccc" metalness={0.85} roughness={0.1} emissive="#aaaaff" emissiveIntensity={0.25} />
+        </mesh>
+      ))}
+
+      {/* Cyan glow */}
+      <pointLight color="#00d4ff" intensity={1.6} distance={1.2} decay={2} position={[0, 0.05, 0]} />
     </group>
   );
 }

@@ -1,6 +1,6 @@
 import './index.css';
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import Dashboard from './pages/Dashboard';
 import Map3D     from './pages/Map3D';
@@ -23,7 +23,7 @@ const NAV_ITEMS = [
 ];
 
 function Sidebar({ connected, packetCount, lastTs }) {
-  const loc = useLocation();
+  useLocation(); // keep for future active-link styling
   return (
     <div style={{
       position: 'fixed', top: 0, left: 0, bottom: 0,
