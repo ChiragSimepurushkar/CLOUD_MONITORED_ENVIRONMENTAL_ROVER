@@ -268,6 +268,19 @@ io.on('connection', socket => {
 });
 
 // ─────────────────────────────────────────────
+//  Global Error Handler (Catches ESP8266 Aborts)
+// ─────────────────────────────────────────────
+app.use((err, req, res, next) => {
+  // Arduino ESP8266 often closes the TCP connection immediately after sending
+  // before Express finishes reading the JSON payload. This causes a 'request.aborted' error.
+  if (err.type === 'request.aborted') {
+    return res.status(400).end(); // Silently ignore to prevent console spam
+  }
+  console.error('[Server Error]', err.stack || err.message);
+  res.status(500).json({ error: err.message });
+});
+
+// ─────────────────────────────────────────────
 //  START
 // ─────────────────────────────────────────────
 function getLocalIP() {
