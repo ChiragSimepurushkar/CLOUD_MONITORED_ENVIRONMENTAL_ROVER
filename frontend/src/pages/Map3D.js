@@ -380,6 +380,7 @@ export default function Map3D() {
   const [log,         setLog]         = useState([]);
   const [connected,   setConnected]   = useState(socket.connected);
   const [isReplaying, setIsReplaying] = useState(false);
+  const [isSimulating,setIsSimulating]= useState(false);
   const raysTimer = useRef(null);
 
   // Flash scan rays — defined FIRST so useEffect can safely reference it
@@ -437,81 +438,84 @@ export default function Map3D() {
     };
   }, [flashRays]);
 
-  // Simulate a scan packet (for testing without rover)
-  const doSimulate = useCallback(async (customData) => {
+  // Poll socket.connected every second — ensures LIVE/OFFLINE is always correct
+  useEffect(() => {
+    const id = setInterval(() => setConnected(socket.connected), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Simulate via socket.io (no HTTP — avoids BadRequestError: request aborted)
+  const doSimulate = useCallback((customData) => {
+    if (isSimulating) return;
     const angle = Math.random() * 360;
     const body  = customData || {
-      x: rover.x + Math.sin(angle * Math.PI/180) * 40,
-      y: rover.y + Math.cos(angle * Math.PI/180) * 40,
-      heading: (rover.heading + (Math.random() > 0.8 ? 90 : 0)) % 360,
-      temp: 28 + Math.random() * 10,
-      hum: 55 + Math.random() * 20,
-      gas: 180 + Math.random() * 300,
+      x: Math.round(rover.x + Math.sin(angle * Math.PI / 180) * 40),
+      y: Math.round(rover.y + Math.cos(angle * Math.PI / 180) * 40),
+      heading: Math.round((rover.heading + (Math.random() > 0.8 ? 90 : 0)) % 360),
+      temp: +(28 + Math.random() * 10).toFixed(1),
+      hum:  +(55 + Math.random() * 20).toFixed(1),
+      gas:  Math.round(180 + Math.random() * 300),
     };
-    try {
-      await fetch(`${SERVER}/simulate`, { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(body) });
-      // Flash the scan rays (matching what the /simulate endpoint sends)
-      flashRays([
-        {a:0,d:120},{a:15,d:130},{a:30,d:145},{a:45,d:160},
-        {a:60,d:175},{a:75,d:180},{a:90,d:120},{a:105,d:130},
-        {a:120,d:150},{a:135,d:140},{a:150,d:125},{a:165,d:115},{a:180,d:100}
-      ], body);
-    } catch(e) {}
-  }, [rover, flashRays]);
+    setIsSimulating(true);
+    // Emit via existing WebSocket — zero risk of connection abort
+    socket.emit('client-simulate', body);
+    // Flash rays client-side immediately (server also emits map-update)
+    flashRays([
+      {a:0,d:120},{a:15,d:130},{a:30,d:145},{a:45,d:160},
+      {a:60,d:175},{a:75,d:180},{a:90,d:120},{a:105,d:130},
+      {a:120,d:150},{a:135,d:140},{a:150,d:125},{a:165,d:115},{a:180,d:100}
+    ], body);
+    setTimeout(() => setIsSimulating(false), 600);
+  }, [rover, flashRays, isSimulating]);
 
-  // Replay mode — uses stored scan history, falls back to auto-simulate if empty
+  // Replay mode — all steps via socket.io (no HTTP fetch)
   const doReplay = useCallback(async () => {
     setIsReplaying(true);
     try {
       const r = await fetch(`${SERVER}/replay`);
       let scans = await r.json();
 
-      // If no real scan history yet, generate a demo room automatically
+      // If no real scan history, generate a demo room automatically
       if (!Array.isArray(scans) || scans.length === 0) {
-        const demoScans = [];
         const positions = [
-          {x:0,   y:0,   heading:0},
-          {x:0,   y:40,  heading:0},
-          {x:0,   y:80,  heading:0},
-          {x:40,  y:80,  heading:90},
-          {x:80,  y:80,  heading:90},
-          {x:80,  y:40,  heading:180},
-          {x:80,  y:0,   heading:180},
-          {x:40,  y:0,   heading:270},
+          {x:0,  y:0,  heading:0},   {x:0,  y:40, heading:0},
+          {x:0,  y:80, heading:0},   {x:40, y:80, heading:90},
+          {x:80, y:80, heading:90},  {x:80, y:40, heading:180},
+          {x:80, y:0,  heading:180}, {x:40, y:0,  heading:270},
         ];
-        positions.forEach(pos => {
-          const wallDist = 100 + Math.random() * 50;
-          demoScans.push({
-            ...pos, temp: 28 + Math.random()*8, gas: 180 + Math.random()*250, hum: 55 + Math.random()*20,
+        scans = positions.map(pos => {
+          const wd = 100 + Math.random() * 50;
+          return {
+            ...pos, temp: +(28 + Math.random()*8).toFixed(1),
+            gas: Math.round(180 + Math.random()*250),
+            hum: +(55 + Math.random()*20).toFixed(1),
             scan: [
-              {a:0,d:wallDist-10},{a:15,d:wallDist},{a:30,d:wallDist+15},
-              {a:45,d:wallDist+20},{a:60,d:wallDist+10},{a:75,d:wallDist},
-              {a:90,d:wallDist-5},{a:105,d:wallDist+5},{a:120,d:wallDist+15},
-              {a:135,d:wallDist+10},{a:150,d:wallDist},{a:165,d:wallDist-15},{a:180,d:wallDist-20}
+              {a:0,d:wd-10},{a:15,d:wd},{a:30,d:wd+15},{a:45,d:wd+20},
+              {a:60,d:wd+10},{a:75,d:wd},{a:90,d:wd-5},{a:105,d:wd+5},
+              {a:120,d:wd+15},{a:135,d:wd+10},{a:150,d:wd},{a:165,d:wd-15},{a:180,d:wd-20}
             ]
-          });
+          };
         });
-        scans = demoScans;
       }
 
-      // Reset map then replay each scan
-      await fetch(`${SERVER}/reset`, { method: 'POST' });
+      // Reset via socket then step through each scan
+      socket.emit('client-reset');
+      await new Promise(res => setTimeout(res, 300)); // let reset propagate
+
       let i = 0;
       const step = () => {
         if (i >= scans.length) { setIsReplaying(false); return; }
         const scan = scans[i++];
-        fetch(`${SERVER}/simulate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...scan, hum: scan.hum || 60 })
-        }).then(() => {
-          if (scan.scan) flashRays(scan.scan, scan);
-          setTimeout(step, 400);
-        }).catch(() => setTimeout(step, 400));
+        socket.emit('client-simulate', { ...scan, hum: scan.hum || 60 });
+        if (scan.scan) flashRays(scan.scan, scan);
+        setTimeout(step, 450);
       };
       step();
     } catch(e) { setIsReplaying(false); }
   }, [flashRays]);
+
+
+
 
   // Export map as JSON
   const doExport = useCallback(() => {
@@ -521,9 +525,9 @@ export default function Map3D() {
     a.download = `room_scan_${Date.now()}.json`; a.click();
   }, [occupancy, sensors, rover, history, stats, coverage]);
 
-  // Reset
+  // Reset via socket.io
   const doReset = useCallback(() => {
-    fetch(`${SERVER}/reset`, { method: 'POST' }).catch(() => {});
+    socket.emit('client-reset');
   }, []);
 
   const wallCount     = Object.values(occupancy).filter(c => c.type === 'wall').length;
@@ -594,9 +598,10 @@ export default function Map3D() {
         <div style={{ ...M, fontSize: 9, color: 'rgba(255,255,255,0.1)' }}>|</div>
 
         {/* Action buttons */}
-        <button onClick={doSimulate} style={{ ...M, fontSize: 8, padding: '4px 10px', borderRadius: 5, cursor: 'pointer',
-          background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: 'var(--green)' }}>
-          ⚡ SIMULATE
+        <button onClick={doSimulate}        disabled={isSimulating} style={{ ...M, fontSize: 8, padding: '4px 10px', borderRadius: 5, cursor: isSimulating ? 'not-allowed' : 'pointer',
+          background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: 'var(--green)',
+          opacity: isSimulating ? 0.6 : 1, transition: 'all 0.15s' }}>
+          {isSimulating ? '⏳ SENDING…' : '⚡ SIMULATE'}
         </button>
         <button onClick={doReplay} disabled={isReplaying} style={{ ...M, fontSize: 8, padding: '4px 10px', borderRadius: 5, cursor: 'pointer',
           background: 'rgba(139,92,246,0.12)', border: '1px solid rgba(139,92,246,0.3)', color: '#a78bfa',

@@ -107,27 +107,26 @@ app.post('/rover-data', async (req, res) => {
   const d = req.body;
   if (d.x === undefined) return res.status(400).json({ error: 'Missing x,y fields' });
 
-  // Process through occupancy grid engine (Bresenham)
-  // Works for both scan[] (new) and single-point (legacy)
-  const mapData = gridEngine.processPacket(d);
+  let aborted = false;
+  req.on('close', () => { aborted = true; });
 
-  const entry = logPacket(d, Array.isArray(d.scan) ? 'arduino-scan' : 'arduino-legacy');
-
-  await checkAlert(d, d.x, d.y);
-
-  if (GridReading) {
-    GridReading.create({ ...d, sessionId }).catch(() => {});
+  try {
+    const mapData = gridEngine.processPacket(d);
+    const entry = logPacket(d, Array.isArray(d.scan) ? 'arduino-scan' : 'arduino-legacy');
+    await checkAlert(d, d.x, d.y);
+    if (GridReading) GridReading.create({ ...d, sessionId }).catch(() => {});
+    const scanCount = Array.isArray(d.scan) ? d.scan.length : 0;
+    console.log(`[#${entry.id}][${entry.source}] X=${d.x.toFixed(0)} Y=${d.y.toFixed(0)} Hdg=${d.heading}° G=${d.gas}ppm Rays=${scanCount}`);
+    if (!aborted) {
+      io.emit('raw-data',   entry);
+      io.emit('map-update', { ...mapData, lastScan: Array.isArray(d.scan) ? d.scan : null });
+      io.emit('chart-update', chartBuffer.slice(-1)[0]);
+      res.json({ status: 'ok', packetId: entry.id, mapCells: mapData.cellCount });
+    }
+  } catch(err) {
+    console.error('[/rover-data] Error:', err.message);
+    if (!aborted) res.status(500).json({ error: err.message });
   }
-
-  // Broadcast full occupancy map + chart update (include lastScan for ray flash)
-  io.emit('raw-data',     entry);
-  io.emit('map-update',   { ...mapData, lastScan: Array.isArray(d.scan) ? d.scan : null });
-  io.emit('chart-update', chartBuffer.slice(-1)[0]);
-
-  const scanCount = Array.isArray(d.scan) ? d.scan.length : 0;
-  console.log(`[#${entry.id}][${entry.source}] X=${d.x.toFixed(0)} Y=${d.y.toFixed(0)} Hdg=${d.heading}° T=${d.temp ?? d.temperature}°C G=${d.gas}ppm Rays=${scanCount}`);
-
-  res.json({ status: 'ok', packetId: entry.id, sessionId, mapCells: mapData.cellCount });
 });
 
 // ── POST /sensor-data  (legacy endpoint — keeps dashboard-code working)
@@ -145,27 +144,21 @@ app.post('/sensor-data', async (req, res) => {
   res.json({ message: 'Sensor data stored' });
 });
 
-// ── POST /simulate  (browser test — sends fake scan packet)
+// ── POST /simulate  (HTTP fallback — browser can also use socket 'client-simulate')
 app.post('/simulate', (req, res) => {
-  const defaults = {
-    x: 50, y: 50, heading: 0,
-    temp: 28, humidity: 62, hum: 62, gas: 210,
-    obstacle: false, distance: 120,
-    // Fake 13-ray sweep for testing the full pipeline
-    scan: [
-      {a:0,d:120},{a:15,d:130},{a:30,d:145},{a:45,d:160},
-      {a:60,d:175},{a:75,d:180},{a:90,d:120},{a:105,d:130},
-      {a:120,d:150},{a:135,d:140},{a:150,d:125},{a:165,d:115},{a:180,d:100}
-    ]
-  };
-  const d = { ...defaults, ...req.body };
-  const mapData = gridEngine.processPacket(d);
-  const entry   = logPacket(d, 'simulate');
-  io.emit('raw-data',     entry);
-  io.emit('map-update',   { ...mapData, lastScan: d.scan || null });
-  io.emit('chart-update', chartBuffer.slice(-1)[0]);
-  console.log(`[SIM #${entry.id}] T=${d.temp} H=${d.hum} G=${d.gas} X=${d.x} Y=${d.y}`);
-  res.json({ status: 'simulated', packetId: entry.id, mapCells: mapData.cellCount });
+  try {
+    const d = buildSimPacket(req.body);
+    const mapData = gridEngine.processPacket(d);
+    const entry   = logPacket(d, 'simulate');
+    io.emit('raw-data',   entry);
+    io.emit('map-update', { ...mapData, lastScan: d.scan || null });
+    io.emit('chart-update', chartBuffer.slice(-1)[0]);
+    console.log(`[SIM HTTP #${entry.id}] X=${d.x} Y=${d.y}`);
+    res.json({ status: 'simulated', packetId: entry.id, mapCells: mapData.cellCount });
+  } catch(err) {
+    console.error('[/simulate] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── GET /map-state  (full occupancy grid for initial page load)
@@ -224,12 +217,54 @@ app.get('/health', (req, res) => {
 // ─────────────────────────────────────────────
 //  SOCKET.IO
 // ─────────────────────────────────────────────
+
+// Shared helper — builds a simulate packet from partial data
+function buildSimPacket(override = {}) {
+  return {
+    x: 50, y: 50, heading: 0,
+    temp: 28, hum: 62, gas: 210,
+    obstacle: false, distance: 120,
+    scan: [
+      {a:0,d:120},{a:15,d:130},{a:30,d:145},{a:45,d:160},
+      {a:60,d:175},{a:75,d:180},{a:90,d:120},{a:105,d:130},
+      {a:120,d:150},{a:135,d:140},{a:150,d:125},{a:165,d:115},{a:180,d:100}
+    ],
+    ...override
+  };
+}
+
 io.on('connection', socket => {
-  console.log('[Socket] 🌐 Browser connected:', socket.id);
-  // Send current map state + chart data on connect
-  socket.emit('map-update',  gridEngine.getState());
+  console.log('[Socket] Browser connected:', socket.id);
+
+  // Send current state immediately on connect
+  const state = gridEngine.getState();
+  socket.emit('map-update',  { ...state, lastScan: null });
   socket.emit('chart-init',  chartBuffer);
-  socket.on('disconnect', () => console.log('[Socket] ❌ Disconnected:', socket.id));
+
+  // ── SIMULATE via socket (avoids HTTP connection pool issues) ──
+  socket.on('client-simulate', (data) => {
+    try {
+      const d       = buildSimPacket(data || {});
+      const mapData = gridEngine.processPacket(d);
+      const entry   = logPacket(d, 'simulate');
+      io.emit('raw-data',   entry);
+      io.emit('map-update', { ...mapData, lastScan: d.scan });
+      io.emit('chart-update', chartBuffer.slice(-1)[0]);
+      console.log(`[SIM WS #${entry.id}] X=${d.x} Y=${d.y} Hdg=${d.heading}`);
+    } catch(err) {
+      console.error('[client-simulate] Error:', err.message);
+      socket.emit('sim-error', { error: err.message });
+    }
+  });
+
+  // ── RESET via socket ──────────────────────────────────────────
+  socket.on('client-reset', () => {
+    gridEngine.reset();
+    io.emit('map-reset');
+    console.log('[Socket] Map reset by browser');
+  });
+
+  socket.on('disconnect', () => console.log('[Socket] Disconnected:', socket.id));
 });
 
 // ─────────────────────────────────────────────
