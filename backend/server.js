@@ -119,9 +119,9 @@ app.post('/rover-data', async (req, res) => {
     GridReading.create({ ...d, sessionId }).catch(() => {});
   }
 
-  // Broadcast full occupancy map + chart update
+  // Broadcast full occupancy map + chart update (include lastScan for ray flash)
   io.emit('raw-data',     entry);
-  io.emit('map-update',   mapData);
+  io.emit('map-update',   { ...mapData, lastScan: Array.isArray(d.scan) ? d.scan : null });
   io.emit('chart-update', chartBuffer.slice(-1)[0]);
 
   const scanCount = Array.isArray(d.scan) ? d.scan.length : 0;
@@ -162,7 +162,7 @@ app.post('/simulate', (req, res) => {
   const mapData = gridEngine.processPacket(d);
   const entry   = logPacket(d, 'simulate');
   io.emit('raw-data',     entry);
-  io.emit('map-update',   mapData);
+  io.emit('map-update',   { ...mapData, lastScan: d.scan || null });
   io.emit('chart-update', chartBuffer.slice(-1)[0]);
   console.log(`[SIM #${entry.id}] T=${d.temp} H=${d.hum} G=${d.gas} X=${d.x} Y=${d.y}`);
   res.json({ status: 'simulated', packetId: entry.id, mapCells: mapData.cellCount });

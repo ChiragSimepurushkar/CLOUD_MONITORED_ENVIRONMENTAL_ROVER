@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Grid, Text, PerspectiveCamera } from '@react-three/drei';
+import { OrbitControls, Grid } from '@react-three/drei';
 import * as THREE from 'three';
 import { socket, SERVER } from '../App';
 
@@ -139,8 +139,6 @@ function ScanRayFlash({ rays, roverPos, fading }) {
 // ── Rover Model (procedural) ───────────────────────────────────
 function RoverModel({ position, heading }) {
   const groupRef = useRef();
-  const targetPos = useRef(new THREE.Vector3(...position));
-  const targetRot = useRef(heading);
 
   useFrame(() => {
     if (!groupRef.current) return;
@@ -380,7 +378,7 @@ export default function Map3D() {
   const [viewMode,    setViewMode]    = useState('default');
   const [followRover, setFollowRover] = useState(false);
   const [log,         setLog]         = useState([]);
-  const [connected,   setConnected]   = useState(false);
+  const [connected,   setConnected]   = useState(socket.connected);
   const [isReplaying, setIsReplaying] = useState(false);
   const raysTimer = useRef(null);
 
@@ -406,10 +404,9 @@ export default function Map3D() {
       if (data.stats)     setStats(data.stats);
       if (data.coverage != null) setCoverage(data.coverage);
 
-      // If it has scan rays, flash them
-      if (data.rover && data.occupancy) {
-        const latestScan = data.stats?.lastScan;
-        // Find rays from the socket (enriched by simulate)
+      // Flash scan rays if the update contains scan data
+      if (data.lastScan && data.rover) {
+        flashRays(data.lastScan, data.rover);
       }
     });
 
@@ -451,9 +448,8 @@ export default function Map3D() {
       gas: 180 + Math.random() * 300,
     };
     try {
-      const r = await fetch(`${SERVER}/simulate`, { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(body) });
-      const d = await r.json();
-      // Immediately flash the fake scan rays from simulate endpoint's hardcoded scan
+      await fetch(`${SERVER}/simulate`, { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(body) });
+      // Flash the scan rays (matching what the /simulate endpoint sends)
       flashRays([
         {a:0,d:120},{a:15,d:130},{a:30,d:145},{a:45,d:160},
         {a:60,d:175},{a:75,d:180},{a:90,d:120},{a:105,d:130},
@@ -462,17 +458,42 @@ export default function Map3D() {
     } catch(e) {}
   }, [rover, flashRays]);
 
-  // Replay mode
+  // Replay mode — uses stored scan history, falls back to auto-simulate if empty
   const doReplay = useCallback(async () => {
     setIsReplaying(true);
     try {
       const r = await fetch(`${SERVER}/replay`);
-      const scans = await r.json();
+      let scans = await r.json();
+
+      // If no real scan history yet, generate a demo room automatically
       if (!Array.isArray(scans) || scans.length === 0) {
-        setIsReplaying(false);
-        return;
+        const demoScans = [];
+        const positions = [
+          {x:0,   y:0,   heading:0},
+          {x:0,   y:40,  heading:0},
+          {x:0,   y:80,  heading:0},
+          {x:40,  y:80,  heading:90},
+          {x:80,  y:80,  heading:90},
+          {x:80,  y:40,  heading:180},
+          {x:80,  y:0,   heading:180},
+          {x:40,  y:0,   heading:270},
+        ];
+        positions.forEach(pos => {
+          const wallDist = 100 + Math.random() * 50;
+          demoScans.push({
+            ...pos, temp: 28 + Math.random()*8, gas: 180 + Math.random()*250, hum: 55 + Math.random()*20,
+            scan: [
+              {a:0,d:wallDist-10},{a:15,d:wallDist},{a:30,d:wallDist+15},
+              {a:45,d:wallDist+20},{a:60,d:wallDist+10},{a:75,d:wallDist},
+              {a:90,d:wallDist-5},{a:105,d:wallDist+5},{a:120,d:wallDist+15},
+              {a:135,d:wallDist+10},{a:150,d:wallDist},{a:165,d:wallDist-15},{a:180,d:wallDist-20}
+            ]
+          });
+        });
+        scans = demoScans;
       }
-      // Reset and replay
+
+      // Reset map then replay each scan
       await fetch(`${SERVER}/reset`, { method: 'POST' });
       let i = 0;
       const step = () => {
@@ -482,7 +503,10 @@ export default function Map3D() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...scan, hum: scan.hum || 60 })
-        }).then(() => { if (scan.scan) flashRays(scan.scan, scan); setTimeout(step, 300); });
+        }).then(() => {
+          if (scan.scan) flashRays(scan.scan, scan);
+          setTimeout(step, 400);
+        }).catch(() => setTimeout(step, 400));
       };
       step();
     } catch(e) { setIsReplaying(false); }
@@ -501,7 +525,6 @@ export default function Map3D() {
     fetch(`${SERVER}/reset`, { method: 'POST' }).catch(() => {});
   }, []);
 
-  const cellCount     = Object.keys(occupancy).length;
   const wallCount     = Object.values(occupancy).filter(c => c.type === 'wall').length;
   const freeCount     = Object.values(occupancy).filter(c => c.type === 'free').length;
   const suspectCount  = Object.values(occupancy).filter(c => c.type === 'suspect').length;

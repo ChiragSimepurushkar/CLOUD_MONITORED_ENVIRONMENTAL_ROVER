@@ -6,7 +6,6 @@ import {
 import { socket, SERVER } from '../App';
 
 const M = { fontFamily: 'var(--font-mono)' };
-const S = { fontFamily: 'var(--font-sans)' };
 
 const COLORS = {
   temperature: '#f87171',
