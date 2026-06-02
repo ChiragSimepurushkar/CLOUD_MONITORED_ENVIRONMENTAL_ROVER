@@ -196,7 +196,7 @@ export default function App() {
         <main style={{
           marginLeft: 'var(--sidebar-w)',
           flex: 1,
-          overflow: 'hidden',
+          overflow: 'auto',
           position: 'relative',
           background: 'transparent',
         }}>

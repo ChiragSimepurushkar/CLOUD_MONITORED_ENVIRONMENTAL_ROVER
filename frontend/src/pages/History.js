@@ -122,7 +122,7 @@ export default function History() {
       {/* Temperature area chart */}
       <GlassCard style={{ padding: '18px 20px' }}>
         <div className="section-header">🌡 TEMPERATURE OVER TIME (°C)</div>
-        <ResponsiveContainer width="100%" height={180}>
+        <ResponsiveContainer width="100%" height={280}>
           <AreaChart data={displayed}>
             <defs>
               <linearGradient id="gT" x1="0" y1="0" x2="0" y2="1">
@@ -142,7 +142,7 @@ export default function History() {
       {/* Humidity + Gas dual chart */}
       <GlassCard style={{ padding: '18px 20px' }}>
         <div className="section-header">💧 HUMIDITY & 💨 GAS TREND</div>
-        <ResponsiveContainer width="100%" height={180}>
+        <ResponsiveContainer width="100%" height={280}>
           <LineChart data={displayed}>
             <CartesianGrid strokeDasharray="2 4" stroke="rgba(0,212,255,0.04)" />
             <XAxis dataKey="time" tick={{ fill:'rgba(148,180,220,0.4)',fontSize:8 }} axisLine={false} tickLine={false} />
@@ -160,7 +160,7 @@ export default function History() {
       {/* Gas bar chart */}
       <GlassCard style={{ padding: '18px 20px' }}>
         <div className="section-header">💨 GAS READINGS DISTRIBUTION</div>
-        <ResponsiveContainer width="100%" height={130}>
+        <ResponsiveContainer width="100%" height={220}>
           <BarChart data={displayed} barSize={5}>
             <CartesianGrid strokeDasharray="2 4" stroke="rgba(0,212,255,0.04)" />
             <XAxis dataKey="time" tick={{ fill:'rgba(148,180,220,0.4)',fontSize:8 }} axisLine={false} tickLine={false} />
@@ -176,7 +176,7 @@ export default function History() {
       {/* Data table */}
       <GlassCard style={{ padding: '16px 20px' }}>
         <div className="section-header">📋 DATA TABLE ({displayed.length} ROWS)</div>
-        <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+        <div style={{ maxHeight: 360, overflowY: 'auto' }}>
           <table className="data-table">
             <thead><tr>
               <th>TIME</th><th>TEMP (°C)</th><th>HUMIDITY (%)</th><th>GAS (ppm)</th><th>DIST (cm)</th><th>STATUS</th>

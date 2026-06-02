@@ -189,13 +189,13 @@ export default function Dashboard() {
       </div>
 
       {/* ─ Chart + Gauges row ─ */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 16, flex: 1, minHeight: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 16 }}>
 
         {/* Area chart */}
         <GlassCard style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column' }}>
           <div className="section-header">📈 LIVE SENSOR TREND</div>
-          <div style={{ flex: 1, minHeight: 220 }}>
-            <ResponsiveContainer width="100%" height="100%">
+          <div>
+            <ResponsiveContainer width="100%" height={340}>
               <AreaChart data={chart} margin={{ top: 5, right: 5, left: -28, bottom: 0 }}>
                 <defs>
                   {Object.entries(COLORS).map(([k, c]) => (
