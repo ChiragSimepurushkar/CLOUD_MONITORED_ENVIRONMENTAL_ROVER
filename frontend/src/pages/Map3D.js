@@ -382,7 +382,22 @@ export default function Map3D() {
   const [isReplaying, setIsReplaying] = useState(false);
   const raysTimer = useRef(null);
 
-  // Fetch initial state
+  // Flash scan rays — defined FIRST so useEffect can safely reference it
+  const flashRays = useCallback((scan, roverPos) => {
+    if (!Array.isArray(scan) || scan.length === 0) return;
+    setScanRays(scan);
+    setRaysVisible(true);
+    clearTimeout(raysTimer.current);
+    raysTimer.current = setTimeout(() => setRaysVisible(false), 900);
+    setLog(prev => [{
+      time: new Date().toLocaleTimeString(),
+      text: `Scan @ (${Math.round(roverPos.x)}, ${Math.round(roverPos.y)}) — ${scan.length} rays`,
+      source: 'scan',
+    }, ...prev].slice(0, 30));
+  }, []);
+
+  // Fetch initial state + socket listeners
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     fetch(`${SERVER}/map-state`).then(r => r.json()).then(d => {
       if (d.occupancy) setOccupancy(d.occupancy);
@@ -420,21 +435,7 @@ export default function Map3D() {
       socket.off('connect'); socket.off('disconnect');
       socket.off('map-update'); socket.off('map-reset');
     };
-  }, []);
-
-  // Flash scan rays on new packet
-  const flashRays = useCallback((scan, roverPos) => {
-    if (!Array.isArray(scan) || scan.length === 0) return;
-    setScanRays(scan);
-    setRaysVisible(true);
-    clearTimeout(raysTimer.current);
-    raysTimer.current = setTimeout(() => setRaysVisible(false), 900);
-    setLog(prev => [{
-      time: new Date().toLocaleTimeString(),
-      text: `Scan @ (${Math.round(roverPos.x)}, ${Math.round(roverPos.y)}) — ${scan.length} rays`,
-      source: 'scan',
-    }, ...prev].slice(0, 30));
-  }, []);
+  }, [flashRays]);
 
   // Simulate a scan packet (for testing without rover)
   const doSimulate = useCallback(async (customData) => {
