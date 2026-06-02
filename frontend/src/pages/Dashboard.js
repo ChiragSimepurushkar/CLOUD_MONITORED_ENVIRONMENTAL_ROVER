@@ -112,6 +112,9 @@ export default function Dashboard() {
   const [online, setOnline] = useState(false);
 
   useEffect(() => {
+    // Set initial state immediately
+    setOnline(socket.connected);
+
     socket.on('connect',    () => setOnline(true));
     socket.on('disconnect', () => setOnline(false));
     fetch(`${SERVER}/chart-data`).then(r => r.json())
@@ -126,7 +129,12 @@ export default function Dashboard() {
     socket.on('chart-update', onChart);
     socket.on('chart-init',   onInit);
     socket.on('map-update',   onMap);
+
+    // Poll socket.connected every second — catches missed connect events
+    const pollId = setInterval(() => setOnline(socket.connected), 1000);
+
     return () => {
+      clearInterval(pollId);
       socket.off('connect'); socket.off('disconnect');
       socket.off('chart-update', onChart); socket.off('chart-init', onInit); socket.off('map-update', onMap);
     };

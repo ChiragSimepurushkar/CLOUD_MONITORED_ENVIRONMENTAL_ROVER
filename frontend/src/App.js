@@ -169,6 +169,9 @@ export default function App() {
   const [alertCount,  setAlertCount]  = useState(0);
 
   useEffect(() => {
+    // Set initial state immediately (socket may already be connected)
+    setConnected(socket.connected);
+
     socket.on('connect',    () => setConnected(true));
     socket.on('disconnect', () => setConnected(false));
     socket.on('raw-data',   e  => {
@@ -176,7 +179,12 @@ export default function App() {
       setLastTs(new Date(e.ts).toLocaleTimeString());
     });
     socket.on('newAlert', () => setAlertCount(n => n + 1));
+
+    // Poll socket.connected every second — catches missed connect events
+    const pollId = setInterval(() => setConnected(socket.connected), 1000);
+
     return () => {
+      clearInterval(pollId);
       socket.off('connect');
       socket.off('disconnect');
       socket.off('raw-data');

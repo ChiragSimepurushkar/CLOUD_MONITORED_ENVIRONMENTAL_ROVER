@@ -130,7 +130,7 @@ app.post('/rover-data', async (req, res) => {
     await checkAlert(d, d.x, d.y);
     if (GridReading) GridReading.create({ ...d, sessionId }).catch(() => {});
     const scanCount = Array.isArray(d.scan) ? d.scan.length : 0;
-    console.log(`[#${entry.id}][${entry.source}] X=${d.x.toFixed(0)} Y=${d.y.toFixed(0)} Hdg=${d.heading}° G=${d.gas}ppm Rays=${scanCount}`);
+    console.log(`[#${entry.id}][${entry.source}] X=${d.x.toFixed(0)} Y=${d.y.toFixed(0)} Hdg=${d.heading}° T=${d.temp ?? d.temperature ?? '?'}°C H=${d.hum ?? d.humidity ?? '?'}% G=${d.gas}ppm Rays=${scanCount}`);
     if (!aborted) {
       io.emit('raw-data',   entry);
       io.emit('map-update', { ...mapData, lastScan: Array.isArray(d.scan) ? d.scan : null });
