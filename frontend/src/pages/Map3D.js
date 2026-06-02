@@ -447,8 +447,12 @@ export default function Map3D() {
   // Simulate via socket.io (no HTTP — avoids BadRequestError: request aborted)
   const doSimulate = useCallback((customData) => {
     if (isSimulating) return;
+    // Prevent React SyntheticEvent from being used as payload
+    const isEvent = customData && typeof customData.preventDefault === 'function';
+    const payload = isEvent ? null : customData;
+
     const angle = Math.random() * 360;
-    const body  = customData || {
+    const body  = payload || {
       x: Math.round(rover.x + Math.sin(angle * Math.PI / 180) * 40),
       y: Math.round(rover.y + Math.cos(angle * Math.PI / 180) * 40),
       heading: Math.round((rover.heading + (Math.random() > 0.8 ? 90 : 0)) % 360),
@@ -598,7 +602,7 @@ export default function Map3D() {
         <div style={{ ...M, fontSize: 9, color: 'rgba(255,255,255,0.1)' }}>|</div>
 
         {/* Action buttons */}
-        <button onClick={doSimulate}        disabled={isSimulating} style={{ ...M, fontSize: 8, padding: '4px 10px', borderRadius: 5, cursor: isSimulating ? 'not-allowed' : 'pointer',
+        <button onClick={() => doSimulate()}        disabled={isSimulating} style={{ ...M, fontSize: 8, padding: '4px 10px', borderRadius: 5, cursor: isSimulating ? 'not-allowed' : 'pointer',
           background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: 'var(--green)',
           opacity: isSimulating ? 0.6 : 1, transition: 'all 0.15s' }}>
           {isSimulating ? '⏳ SENDING…' : '⚡ SIMULATE'}
@@ -677,10 +681,10 @@ export default function Map3D() {
           border: '1px solid rgba(0,212,255,0.15)', borderRadius: 10, padding: '12px 14px' }}>
           <div style={{ ...M, fontSize: 8, color: 'var(--text-dim)', letterSpacing: '0.2em', marginBottom: 8 }}>SENSOR PEAKS</div>
           {[
-            ['MAX GAS',  stats.maxGas ? `${stats.maxGas} ppm` : '—', '#fb923c'],
-            ['MAX TEMP', stats.maxTemp !== -Infinity ? `${stats.maxTemp}°C` : '—', '#f87171'],
-            ['MIN TEMP', stats.minTemp !== Infinity  ? `${stats.minTemp}°C` : '—', '#38bdf8'],
-            ['MAX HUM',  stats.maxHum ? `${stats.maxHum}%` : '—', '#a78bfa'],
+            ['MAX GAS',  stats.maxGas > 0 ? stats.maxGas : '--', '#f43f5e'],
+            ['MAX TEMP', stats.maxTemp > -100 && stats.maxTemp !== null ? `${stats.maxTemp}°C` : '--', '#f97316'],
+            ['MIN TEMP', stats.minTemp < 1000 && stats.minTemp !== null ? `${stats.minTemp}°C` : '--', '#38bdf8'],
+            ['MAX HUM',  stats.maxHum > 0 ? `${stats.maxHum}%` : '--', '#8b5cf6'],
           ].map(([k, v, c]) => (
             <div key={k} style={{ display:'flex', justifyContent:'space-between', marginBottom: 4 }}>
               <span style={{ ...M, fontSize: 9, color: 'var(--text-dim)' }}>{k}</span>
