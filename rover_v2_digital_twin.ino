@@ -161,14 +161,16 @@ void updatePositionNow() {
 
 String doFullScan() {
   String result = "[";
-  int angles[]  = {0, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180};
-  int numAngles = 13;
+  
+  // REDUCED FROM 13 TO 7 ANGLES: This prevents the Wi-Fi chip from choking on massive data strings!
+  int angles[]  = {0, 30, 60, 90, 120, 150, 180};
+  int numAngles = 7;
 
   Serial.println(F("  [Sweep] Scanning..."));
 
   for (int i = 0; i < numAngles; i++) {
     myservo.write(angles[i]);
-    delay(320);               // wait for servo to settle at position
+    delay(400);               // Wait slightly longer for servo to settle
 
     int d = sonar.ping_cm();
     if (d == 0) d = 200;      // 0 = nothing in range → use max
@@ -243,7 +245,7 @@ void uploadScanPacket(float temp, float hum, int gas, int dist, String scanJson)
 
   for (int i = 0; i < req.length(); i++) {
     esp8266.write(req[i]);
-    delay(3);
+    delay(5); // Increased from 3ms to 5ms for stability
   }
 
   if (espWaitFor("SEND OK", 8000)) {
@@ -259,7 +261,8 @@ void uploadScanPacket(float temp, float hum, int gas, int dist, String scanJson)
     uploadFailCount++;
   }
 
-  delay(300);
+  // INCREASE THIS DELAY to give Node.js time to digest the data!
+  delay(1500); 
   espSend("AT+CIPCLOSE");
   espFlush();
 }
