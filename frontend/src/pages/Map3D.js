@@ -1,493 +1,749 @@
 // ══════════════════════════════════════════════════════════════
-//  Map3D.js  — 3D Digital Twin page
-//  Full React Three Fiber map embedded as a page in the combined app
-//  Pulls shared socket from App.js context
+//  Map3D.js — Real Room Occupancy Grid Viewer
+//  Renders Bresenham-traced rooms: walls, floors, heatmaps, trail
+//  Scan ray flash + 2D minimap + replay + coverage stats
 // ══════════════════════════════════════════════════════════════
 
-import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Grid } from '@react-three/drei';
-import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { OrbitControls, Grid, Text, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import { socket, SERVER } from '../App';
 
-const CELL_SCALE = 0.25;
+const M = { fontFamily: 'var(--font-mono)' };
 
-// ── Color utilities ──────────────────────────────
-function getTempColor(t) {
-  const k = Math.max(0, Math.min(1, (t - 10) / 50));
-  return { r: Math.round(k * 255), g: Math.round((1 - Math.abs(k - 0.5) * 2) * 180), b: Math.round((1 - k) * 255) };
+// ── Constants ─────────────────────────────────────────────────
+const CELL_CM   = 25;    // must match backend gridMap.js
+const CELL_UNIT = 1.0;   // 1 Three.js unit = 25 cm
+
+// ── Color helpers ─────────────────────────────────────────────
+function gasColor(ppm) {
+  if (ppm > 400) return '#ef4444';
+  if (ppm > 250) return '#f59e0b';
+  return '#10b981';
 }
-function getGasColor(g) {
-  if (g <= 0)   return { r: 0,   g: 200, b: 83  };
-  if (g <= 200) return { r: Math.round(g / 200 * 200), g: 200, b: 83 };
-  if (g <= 400) return { r: 255, g: Math.round(200 - (g - 200) / 200 * 200), b: 0 };
-  return { r: 255, g: 0, b: Math.round(Math.min(1, (g - 400) / 200) * 80) };
+function tempColor(c) {
+  if (c > 40) return '#ef4444';
+  if (c > 35) return '#f59e0b';
+  if (c > 30) return '#fb923c';
+  return '#38bdf8';
 }
-function getHumColor(h) {
-  const k = Math.max(0, Math.min(1, h / 100));
-  return { r: Math.round((1 - k) * 145), g: Math.round((1 - k * 0.5) * 200), b: 255 };
-}
-function rgbHex({ r, g, b }) { return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`; }
-function cellHeight(gas, temp) { return Math.max(0.08, (gas / 150) * 0.6 + (temp / 60) * 0.3); }
-function emissiveInt(gas, temp) { return Math.min(1.2, gas / 400 * 0.7 + temp / 60 * 0.3); }
-function safetyOf(gas, temp) {
-  if (gas > 400 || temp > 45) return { label: 'DANGER',  color: '#ff4d4f', glow: 'rgba(255,77,79,0.4)' };
-  if (gas > 250 || temp > 35) return { label: 'WARNING', color: '#ffa940', glow: 'rgba(255,169,64,0.3)' };
-  return                              { label: 'SAFE',    color: '#52c41a', glow: 'rgba(82,196,26,0.3)' };
+function lerpColor(a, b, t) {
+  const ca = new THREE.Color(a), cb = new THREE.Color(b);
+  return '#' + new THREE.Color(
+    ca.r + (cb.r - ca.r) * t,
+    ca.g + (cb.g - ca.g) * t,
+    ca.b + (cb.b - ca.b) * t
+  ).getHexString();
 }
 
-// ── Grid Cell ────────────────────────────────────
-function GridCell({ gx, gy, cell, mode }) {
-  const meshRef  = useRef();
-  const matRef   = useRef();
-  const targetH  = useRef(0.08);
-  const currentH = useRef(0.08);
-
-  const { color, height, emissive, ei } = useMemo(() => {
-    if (cell.isObstacle) return { color: '#4a5568', height: 2.0, emissive: '#2d3748', ei: 0.1 };
-    const rgb = mode === 'gas' ? getGasColor(cell.avgGas || 0) : mode === 'temp' ? getTempColor(cell.avgTemp || 25) : getHumColor(cell.avgHum || 50);
-    return { color: rgbHex(rgb), height: cellHeight(cell.avgGas || 0, cell.avgTemp || 25), emissive: rgbHex(rgb), ei: emissiveInt(cell.avgGas || 0, cell.avgTemp || 25) };
-  }, [cell, mode]);
-
-  useEffect(() => { targetH.current = height; }, [height]);
-
-  useFrame((_, delta) => {
-    if (!meshRef.current || !matRef.current) return;
-    const h = currentH.current + (targetH.current - currentH.current) * Math.min(1, delta * 5);
-    currentH.current = h;
-    meshRef.current.scale.y = Math.max(0.01, h / Math.max(height, 0.01));
-    meshRef.current.position.y = h / 2;
-    matRef.current.emissiveIntensity = ei * (0.5 + Math.sin(Date.now() * 0.003) * 0.15);
-  });
+// ── Wall Cell ─────────────────────────────────────────────────
+function WallCell({ cx, cy, prob, hits }) {
+  const confidence = Math.min(1, hits / 10);
+  const height  = 0.5 + prob * 1.5;
+  const opacity = Math.min(0.98, 0.25 + hits * 0.08);
+  const color   = lerpColor('#1a2e44', '#3a7ab4', confidence);
 
   return (
-    <mesh ref={meshRef} position={[gx * CELL_SCALE, height / 2, gy * CELL_SCALE]} castShadow receiveShadow>
-      <boxGeometry args={[CELL_SCALE * 0.9, height, CELL_SCALE * 0.9]} />
-      <meshStandardMaterial ref={matRef} color={color} emissive={emissive} emissiveIntensity={ei}
-        transparent opacity={cell.isObstacle ? 0.92 : 0.85} roughness={0.4} metalness={0.2} />
+    <mesh position={[cx * CELL_UNIT, height / 2, cy * CELL_UNIT]} castShadow>
+      <boxGeometry args={[CELL_UNIT * 0.92, height, CELL_UNIT * 0.92]} />
+      <meshStandardMaterial
+        color={color}
+        transparent
+        opacity={opacity}
+        emissive={color}
+        emissiveIntensity={0.08 + confidence * 0.12}
+      />
     </mesh>
   );
 }
 
-// ── Rover 3D Model (matches real bot) ────────────
-//    Red chassis, 4 black/yellow wheels, blue servo
-//    block, Arduino PCB, sonar pole + twin eyes
-function RoverMarker({ rover }) {
-  const groupRef = useRef();
-  const ringRef  = useRef();
-  const t        = useRef(0);
-  const posRef   = useRef({ x: 0, z: 0 });
+// ── Suspect Wall (unconfirmed) ─────────────────────────────────
+function SuspectCell({ cx, cy }) {
+  return (
+    <mesh position={[cx * CELL_UNIT, 0.08, cy * CELL_UNIT]}>
+      <boxGeometry args={[CELL_UNIT * 0.85, 0.16, CELL_UNIT * 0.85]} />
+      <meshStandardMaterial color="#2a4a62" transparent opacity={0.35} wireframe />
+    </mesh>
+  );
+}
 
-  useFrame((_, delta) => {
-    t.current += delta;
-    if (!groupRef.current) return;
-    const tx = (rover.x / 25) * CELL_SCALE;
-    const tz = (rover.y / 25) * CELL_SCALE;
-    posRef.current.x += (tx - posRef.current.x) * Math.min(1, delta * 3);
-    posRef.current.z += (tz - posRef.current.z) * Math.min(1, delta * 3);
-    groupRef.current.position.set(posRef.current.x, 0, posRef.current.z);
-    groupRef.current.rotation.y = -((rover.heading * Math.PI) / 180);
-    if (ringRef.current) {
-      ringRef.current.scale.setScalar(1 + (Math.sin(t.current * 2) * 0.5 + 0.5) * 0.7);
-      ringRef.current.material.opacity = 0.7 - (Math.sin(t.current * 2) * 0.5 + 0.5) * 0.5;
+// ── Free Floor Cell ────────────────────────────────────────────
+function FreeCell({ cx, cy, sensorData, viewMode }) {
+  let color = '#0a1e35';
+  let emissive = '#0a1e35';
+  let emissiveIntensity = 0.04;
+  let height = 0.04;
+
+  if (sensorData) {
+    if (viewMode === 'gas' && sensorData.avgGas != null) {
+      color   = gasColor(sensorData.avgGas);
+      emissive = color;
+      emissiveIntensity = 0.15;
+      height = 0.04 + (sensorData.avgGas / 600) * 0.3;
+    } else if (viewMode === 'temp' && sensorData.avgTemp != null) {
+      color   = tempColor(sensorData.avgTemp);
+      emissive = color;
+      emissiveIntensity = 0.12;
+    } else if (viewMode === 'humidity' && sensorData.avgHum != null) {
+      const h = sensorData.avgHum / 100;
+      color   = lerpColor('#1e3a5f', '#38bdf8', h);
+      emissive = color;
+      emissiveIntensity = 0.1;
     }
-  });
-
-  const wheels = [[-0.14, -0.10], [0.14, -0.10], [-0.14, 0.10], [0.14, 0.10]];
+  }
 
   return (
-    <group ref={groupRef}>
-      {/* Pulsing ground ring */}
-      <mesh ref={ringRef} position={[0, 0.001, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.18, 0.28, 36]} />
-        <meshStandardMaterial color="#00d4ff" transparent opacity={0.5} side={THREE.DoubleSide} />
-      </mesh>
+    <mesh position={[cx * CELL_UNIT, height / 2, cy * CELL_UNIT]} receiveShadow>
+      <boxGeometry args={[CELL_UNIT * 0.96, height, CELL_UNIT * 0.96]} />
+      <meshStandardMaterial
+        color={color}
+        emissive={emissive}
+        emissiveIntensity={emissiveIntensity}
+        transparent
+        opacity={0.85}
+      />
+    </mesh>
+  );
+}
 
-      {/* Red main chassis */}
-      <mesh position={[0, 0.04, 0]} castShadow receiveShadow>
-        <boxGeometry args={[0.30, 0.04, 0.22]} />
-        <meshStandardMaterial color="#cc1515" roughness={0.4} metalness={0.25} emissive="#550000" emissiveIntensity={0.15} />
-      </mesh>
+// ── Scan Ray Flash ─────────────────────────────────────────────
+function ScanRayFlash({ rays, roverPos, fading }) {
+  const opacity = fading ? 0 : 0.55;
+  if (!rays || rays.length === 0) return null;
+  const wx = (roverPos.x / CELL_CM) * CELL_UNIT;
+  const wz = (roverPos.y / CELL_CM) * CELL_UNIT;
 
-      {/* Yellow side rails */}
-      {[-1, 1].map((s, i) => (
-        <mesh key={i} position={[0, 0.025, s * 0.092]} castShadow>
-          <boxGeometry args={[0.30, 0.018, 0.016]} />
-          <meshStandardMaterial color="#d4a800" roughness={0.35} metalness={0.45} />
-        </mesh>
-      ))}
-
-      {/* 4 Wheels: black tyre + yellow rim + axle */}
-      {wheels.map(([wx, wz], i) => (
-        <group key={i} position={[wx, 0.04, wz]}>
-          <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-            <cylinderGeometry args={[0.048, 0.048, 0.036, 18]} />
-            <meshStandardMaterial color="#111111" roughness={0.95} />
-          </mesh>
-          <mesh rotation={[0, 0, Math.PI / 2]}>
-            <cylinderGeometry args={[0.030, 0.030, 0.037, 10]} />
-            <meshStandardMaterial color="#d4a800" roughness={0.3} metalness={0.6} />
-          </mesh>
-          <mesh rotation={[0, 0, Math.PI / 2]}>
-            <cylinderGeometry args={[0.010, 0.010, 0.055, 8]} />
-            <meshStandardMaterial color="#888888" metalness={0.8} roughness={0.2} />
-          </mesh>
-        </group>
-      ))}
-
-      {/* Arduino PCB (blue) */}
-      <mesh position={[0.01, 0.072, 0.015]} castShadow>
-        <boxGeometry args={[0.12, 0.007, 0.08]} />
-        <meshStandardMaterial color="#1a5fb4" roughness={0.5} emissive="#002244" emissiveIntensity={0.4} />
-      </mesh>
-
-      {/* Motor shield (black layer on Arduino) */}
-      <mesh position={[0.01, 0.081, 0.015]} castShadow>
-        <boxGeometry args={[0.10, 0.006, 0.068]} />
-        <meshStandardMaterial color="#1a1a1a" roughness={0.7} />
-      </mesh>
-
-      {/* Blue servo/mount base */}
-      <mesh position={[-0.05, 0.087, -0.045]} castShadow>
-        <boxGeometry args={[0.055, 0.055, 0.050]} />
-        <meshStandardMaterial color="#1a3a8a" roughness={0.4} metalness={0.2} />
-      </mesh>
-
-      {/* Sonar pole */}
-      <mesh position={[-0.05, 0.137, -0.045]} castShadow>
-        <boxGeometry args={[0.018, 0.060, 0.018]} />
-        <meshStandardMaterial color="#223399" roughness={0.45} />
-      </mesh>
-
-      {/* Sonar sensor body */}
-      <mesh position={[-0.05, 0.180, -0.047]} castShadow>
-        <boxGeometry args={[0.060, 0.022, 0.038]} />
-        <meshStandardMaterial color="#999999" roughness={0.3} metalness={0.55} />
-      </mesh>
-
-      {/* HC-SR04 twin eyes */}
-      {[-0.017, 0.017].map((ox, i) => (
-        <mesh key={i} position={[-0.05 + ox, 0.180, -0.068]}>
-          <cylinderGeometry args={[0.009, 0.009, 0.012, 14]} />
-          <meshStandardMaterial color="#cccccc" metalness={0.85} roughness={0.1} emissive="#aaaaff" emissiveIntensity={0.25} />
-        </mesh>
-      ))}
-
-      {/* Cyan glow */}
-      <pointLight color="#00d4ff" intensity={1.6} distance={1.2} decay={2} position={[0, 0.05, 0]} />
+  return (
+    <group>
+      {rays.map((ray, i) => {
+        const servoOffset  = (ray.a || 0) - 90;
+        const worldAngleDeg = ((roverPos.heading || 0) + servoOffset + 360) % 360;
+        const rad = worldAngleDeg * Math.PI / 180;
+        const d   = (ray.d || 100) / CELL_CM * CELL_UNIT;
+        const ex  = wx + d * Math.sin(rad);
+        const ez  = wz + d * Math.cos(rad);
+        const points = [new THREE.Vector3(wx, 0.12, wz), new THREE.Vector3(ex, 0.12, ez)];
+        const geo = new THREE.BufferGeometry().setFromPoints(points);
+        return (
+          <primitive key={i} object={new THREE.Line(
+            geo,
+            new THREE.LineBasicMaterial({ color: 0x00d4ff, transparent: true, opacity })
+          )} />
+        );
+      })}
     </group>
   );
 }
 
-// ── Path trail ───────────────────────────────────
-function RoverTrail({ history }) {
-  if (history.length < 2) return null;
-  const pts = history.map(p => new THREE.Vector3((p.x / 25) * CELL_SCALE, 0.05, (p.y / 25) * CELL_SCALE));
-  const geom = new THREE.BufferGeometry().setFromPoints(pts);
-  return <line geometry={geom}><lineBasicMaterial color="#00d4ff" transparent opacity={0.3} /></line>;
-}
+// ── Rover Model (procedural) ───────────────────────────────────
+function RoverModel({ position, heading }) {
+  const groupRef = useRef();
+  const targetPos = useRef(new THREE.Vector3(...position));
+  const targetRot = useRef(heading);
 
-// ── Scan ring ────────────────────────────────────
-function ScanRing({ rover }) {
-  const ref = useRef(); const t = useRef(0); const period = 3.5;
-  useFrame((_, delta) => {
-    t.current = (t.current + delta) % period;
-    if (!ref.current) return;
-    const p = t.current / period;
-    ref.current.scale.setScalar(p * 8);
-    ref.current.material.opacity = (1 - p) * 0.22;
-    ref.current.position.set((rover.x / 25) * CELL_SCALE, 0.02, (rover.y / 25) * CELL_SCALE);
+  useFrame(() => {
+    if (!groupRef.current) return;
+    groupRef.current.position.lerp(new THREE.Vector3(...position), 0.12);
+    const currentRot = groupRef.current.rotation.y;
+    const diff = ((heading - currentRot + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+    groupRef.current.rotation.y += diff * 0.12;
   });
+
   return (
-    <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]}>
-      <ringGeometry args={[0.18, 0.22, 48]} />
-      <meshStandardMaterial color="#00d4ff" transparent opacity={0.2} side={THREE.DoubleSide} />
-    </mesh>
+    <group ref={groupRef} position={position}>
+      {/* Chassis */}
+      <mesh castShadow>
+        <boxGeometry args={[0.7, 0.12, 0.85]} />
+        <meshStandardMaterial color="#cc1515" emissive="#cc1515" emissiveIntensity={0.25} />
+      </mesh>
+      {/* Wheels */}
+      {[[-0.38, -0.05, 0.28], [0.38, -0.05, 0.28], [-0.38, -0.05, -0.28], [0.38, -0.05, -0.28]].map(([x, y, z], i) => (
+        <mesh key={i} position={[x, y, z]} rotation={[0, 0, Math.PI / 2]} castShadow>
+          <cylinderGeometry args={[0.11, 0.11, 0.09, 12]} />
+          <meshStandardMaterial color="#1a1a1a" />
+        </mesh>
+      ))}
+      {/* Arduino */}
+      <mesh position={[0, 0.1, 0.05]}>
+        <boxGeometry args={[0.48, 0.06, 0.55]} />
+        <meshStandardMaterial color="#1a5fb4" emissive="#1a5fb4" emissiveIntensity={0.3} />
+      </mesh>
+      {/* Sonar pole */}
+      <mesh position={[0, 0.35, 0.36]}>
+        <boxGeometry args={[0.06, 0.46, 0.06]} />
+        <meshStandardMaterial color="#1a3a8a" />
+      </mesh>
+      {/* HC-SR04 eyes */}
+      {[-0.1, 0.1].map((x, i) => (
+        <mesh key={i} position={[x, 0.35, 0.42]}>
+          <cylinderGeometry args={[0.045, 0.045, 0.06, 10]} rotation={[Math.PI / 2, 0, 0]} />
+          <meshStandardMaterial color="#e0e0e0" emissive="white" emissiveIntensity={0.6} />
+        </mesh>
+      ))}
+      {/* Direction indicator */}
+      <mesh position={[0, 0.2, 0.44]}>
+        <coneGeometry args={[0.1, 0.22, 6]} />
+        <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.9} transparent opacity={0.85} />
+      </mesh>
+      {/* Glow ring */}
+      <mesh position={[0, -0.08, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.45, 0.55, 32]} />
+        <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={1} transparent opacity={0.35} side={THREE.DoubleSide} />
+      </mesh>
+    </group>
   );
 }
 
-// ── Camera follow ────────────────────────────────
-function CameraFollow({ rover, orbitRef }) {
-  const smooth = useRef(new THREE.Vector3());
+// ── Path Trail ────────────────────────────────────────────────
+function PathTrail({ history }) {
+  const lineRef = useRef();
+  useEffect(() => {
+    if (!lineRef.current || !history.length) return;
+    const pts = history.map(h => new THREE.Vector3(
+      (h.x / CELL_CM) * CELL_UNIT, 0.06, (h.y / CELL_CM) * CELL_UNIT
+    ));
+    lineRef.current.geometry.setFromPoints(pts);
+  }, [history]);
+
+  return (
+    <line ref={lineRef}>
+      <bufferGeometry />
+      <lineBasicMaterial color="#00d4ff" transparent opacity={0.45} linewidth={2} />
+    </line>
+  );
+}
+
+// ── Camera that can follow rover ───────────────────────────────
+function CameraRig({ target, follow }) {
+  const { camera } = useThree();
+  const smoothTarget = useRef(new THREE.Vector3(0, 0, 0));
+
   useFrame(() => {
-    if (!orbitRef.current) return;
-    const tx = (rover.x / 25) * CELL_SCALE, tz = (rover.y / 25) * CELL_SCALE;
-    smooth.current.lerp(new THREE.Vector3(tx, 0, tz), 0.03);
-    orbitRef.current.target.copy(smooth.current);
-    orbitRef.current.update();
+    if (!follow) return;
+    const t = new THREE.Vector3(target[0], target[1], target[2]);
+    smoothTarget.current.lerp(t, 0.06);
+    camera.position.set(
+      smoothTarget.current.x + 5,
+      smoothTarget.current.y + 7,
+      smoothTarget.current.z + 5
+    );
+    camera.lookAt(smoothTarget.current);
   });
   return null;
 }
 
-// ── Lighting ─────────────────────────────────────
-function SceneLighting() {
-  return (<>
-    <ambientLight intensity={0.35} color="#0a1628" />
-    <directionalLight position={[10, 18, 8]} intensity={0.9} castShadow shadow-mapSize={[2048, 2048]} />
-    <directionalLight position={[-10, 12, -8]} intensity={0.35} color="#4477ff" />
-    <pointLight position={[0, 12, 0]} intensity={0.5} color="#00d4ff" distance={40} />
-    <hemisphereLight skyColor="#0a1628" groundColor="#000510" intensity={0.5} />
-  </>);
-}
-
-// ── Simulate step state ──────────────────────────
-let simX = 0, simY = 0, simHdg = 0, simStep = 0;
-
-// ── Styles ───────────────────────────────────────
-const mono = { fontFamily: 'var(--font-mono)' };
-const glass = {
-  background: 'rgba(5,11,23,0.80)', backdropFilter: 'blur(14px)',
-  WebkitBackdropFilter: 'blur(14px)', border: '1px solid rgba(0,212,255,0.18)', borderRadius: 10,
-};
-
-export default function Map3D() {
-  const [grid,     setGrid]    = useState({});
-  const [rover,    setRover]   = useState({ x: 0, y: 0, heading: 0 });
-  const [stats,    setStats]   = useState({ maxGas: 0, maxTemp: 0, minTemp: 0, maxHum: 0, cellsVisited: 0, obstacleCount: 0, totalReadings: 0 });
-  const [mode,     setMode]    = useState('gas');
-  const [rawLog,   setRawLog]  = useState([]);
-  const [showLog,  setShowLog] = useState(true);
-  const [autoSim,  setAutoSim] = useState(false);
-  const [simBusy,  setSimBusy] = useState(false);
-  const [pathHist, setPathHist]= useState([]);
-  const orbitRef = useRef();
+// ── 2D Minimap Canvas ─────────────────────────────────────────
+function Minimap2D({ occupancy, rover, size = 180 }) {
+  const canvasRef = useRef();
 
   useEffect(() => {
-    fetch(`${SERVER}/map-state`).then(r => r.json()).then(({ grid: g, rover: r, stats: s }) => {
-      if (g) setGrid(g); if (r) setRover(r); if (s) setStats(s);
-    }).catch(() => {});
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#030810';
+    ctx.fillRect(0, 0, size, size);
 
-    const onMapUpdate = ({ grid: g, rover: r, stats: s }) => {
-      if (g) setGrid(prev => ({ ...prev, ...g }));
-      if (r) { setRover(r); setPathHist(prev => { const last = prev[prev.length - 1]; return (!last || last.x !== r.x || last.y !== r.y) ? [...prev, { x: r.x, y: r.y }].slice(-80) : prev; }); }
-      if (s) setStats(s);
-    };
-    const onRaw  = e  => setRawLog(prev => [e, ...prev].slice(0, 50));
-    const onReset = () => { setGrid({}); setRover({ x:0,y:0,heading:0 }); setStats({ maxGas:0,maxTemp:0,minTemp:0,maxHum:0,cellsVisited:0,obstacleCount:0,totalReadings:0 }); setRawLog([]); setPathHist([]); simX=0;simY=0;simHdg=0;simStep=0; };
+    if (!occupancy || Object.keys(occupancy).length === 0) {
+      ctx.fillStyle = 'rgba(0,212,255,0.2)';
+      ctx.font = '10px monospace';
+      ctx.fillText('No data yet', 30, size / 2);
+      return;
+    }
 
-    socket.on('map-update', onMapUpdate);
-    socket.on('raw-data',   onRaw);
-    socket.on('map-reset',  onReset);
-    return () => { socket.off('map-update', onMapUpdate); socket.off('raw-data', onRaw); socket.off('map-reset', onReset); };
-  }, []);
+    // Find bounds
+    const cells = Object.values(occupancy);
+    const cxs = cells.map(c => c.cx), cys = cells.map(c => c.cy);
+    const minCx = Math.min(...cxs), maxCx = Math.max(...cxs);
+    const minCy = Math.min(...cys), maxCy = Math.max(...cys);
+    const spanX = Math.max(maxCx - minCx + 1, 1);
+    const spanY = Math.max(maxCy - minCy + 1, 1);
+    const cellPx = Math.min(size / spanX, size / spanY, 16);
+    const offsetX = (size - spanX * cellPx) / 2;
+    const offsetY = (size - spanY * cellPx) / 2;
 
-  const handleSimulate = useCallback(async () => {
-    setSimBusy(true);
-    simStep++;
-    if (simStep % 3 === 0) simHdg = (simHdg + 90) % 360;
-    const rad = simHdg * Math.PI / 180;
-    simX += 100 * Math.sin(rad); simY += 100 * Math.cos(rad);
-    await fetch(`${SERVER}/simulate`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ x: +simX.toFixed(1), y: +simY.toFixed(1), heading: simHdg,
-        temp: +(22 + Math.sin(simStep * 0.4) * 12).toFixed(1),
-        humidity: +(55 + Math.cos(simStep * 0.3) * 20).toFixed(1),
-        gas: Math.round(150 + Math.abs(Math.sin(simStep * 0.5)) * 400),
-        obstacle: simStep % 8 === 0,
-        distance: Math.round(40 + Math.random() * 160) })
-    }).catch(() => {});
-    setSimBusy(false);
-  }, []);
+    cells.forEach(cell => {
+      const px = offsetX + (cell.cx - minCx) * cellPx;
+      const py = offsetY + (cell.cy - minCy) * cellPx;
+      if (cell.type === 'wall')    ctx.fillStyle = '#3a7ab4';
+      else if (cell.type === 'free')   ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      else if (cell.type === 'suspect') ctx.fillStyle = 'rgba(58,122,180,0.25)';
+      else                              ctx.fillStyle = 'transparent';
+      if (cell.type !== 'unknown') ctx.fillRect(px, py, cellPx - 1, cellPx - 1);
+    });
 
-  useEffect(() => {
-    if (!autoSim) return;
-    const id = setInterval(handleSimulate, 1500);
-    return () => clearInterval(id);
-  }, [autoSim, handleSimulate]);
+    // Rover dot
+    const rx = offsetX + ((rover.x / CELL_CM) - minCx) * cellPx + cellPx / 2;
+    const ry = offsetY + ((rover.y / CELL_CM) - minCy) * cellPx + cellPx / 2;
+    ctx.beginPath();
+    ctx.arc(rx, ry, Math.max(3, cellPx / 2), 0, Math.PI * 2);
+    ctx.fillStyle = '#00d4ff';
+    ctx.fill();
 
-  const handleReset = useCallback(() => {
-    if (window.confirm('Reset grid?')) fetch(`${SERVER}/reset`, { method: 'POST' });
-  }, []);
-
-  const safety   = safetyOf(stats.maxGas, stats.maxTemp);
-  const cellCount = Object.keys(grid).length;
+    // Heading arrow
+    const hdgRad = ((rover.heading || 0) * Math.PI / 180);
+    ctx.beginPath();
+    ctx.moveTo(rx, ry);
+    ctx.lineTo(rx + Math.sin(hdgRad) * 10, ry + Math.cos(hdgRad) * 10);
+    ctx.strokeStyle = '#00d4ff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }, [occupancy, rover, size]);
 
   return (
-    <div style={{ height: '100vh', position: 'relative', overflow: 'hidden' }}>
+    <canvas ref={canvasRef} width={size} height={size}
+      style={{
+        position: 'absolute', bottom: 20, left: 20,
+        borderRadius: 8, border: '1px solid rgba(0,212,255,0.25)',
+        background: '#030810',
+        boxShadow: '0 0 16px rgba(0,212,255,0.2)',
+      }}
+    />
+  );
+}
 
-      {/* TOP BAR */}
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '8px 16px', background: 'rgba(5,11,23,0.92)',
-        borderBottom: '1px solid rgba(0,212,255,0.15)', backdropFilter: 'blur(16px)' }}>
-        {/* Mode buttons */}
-        <div style={{ display: 'flex', gap: 6 }}>
-          {[['gas','💨 GAS'],['temp','🌡 TEMP'],['hum','💧 HUM']].map(([k, label]) => (
-            <button key={k} onClick={() => setMode(k)} style={{
-              ...mono, fontSize: 10, padding: '4px 12px', borderRadius: 5, cursor: 'pointer',
-              border: `1px solid ${mode === k ? 'var(--accent)' : 'rgba(0,212,255,0.2)'}`,
-              background: mode === k ? 'rgba(0,212,255,0.12)' : 'rgba(0,0,0,0.3)',
-              color: mode === k ? 'var(--accent)' : 'rgba(0,212,255,0.4)',
-              transition: 'all 0.2s',
-            }}>{label}</button>
+// ── 3D Scene ───────────────────────────────────────────────────
+function Scene({ occupancy, sensors, rover, history, scanRays, raysVisible, viewMode, followRover }) {
+  const roverWorldPos = [
+    (rover.x / CELL_CM) * CELL_UNIT,
+    0,
+    (rover.y / CELL_CM) * CELL_UNIT,
+  ];
+  const roverWorldRot = -(rover.heading || 0) * Math.PI / 180;
+
+  return (
+    <>
+      <ambientLight intensity={0.35} />
+      <directionalLight position={[8, 12, 8]} intensity={0.7} castShadow />
+      <pointLight position={[roverWorldPos[0], 2, roverWorldPos[2]]} intensity={1.2} color="#00d4ff" distance={8} />
+
+      {/* Ground plane */}
+      <mesh position={[0, -0.01, 0]} receiveShadow rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[80, 80]} />
+        <meshStandardMaterial color="#030810" />
+      </mesh>
+
+      {/* Grid lines */}
+      <Grid
+        position={[0, 0, 0]}
+        args={[80, 80]}
+        cellSize={CELL_UNIT}
+        cellThickness={0.3}
+        cellColor="#0d1e38"
+        sectionSize={4}
+        sectionThickness={0.5}
+        sectionColor="#0f2244"
+        fadeDistance={60}
+        infiniteGrid
+      />
+
+      {/* Occupancy cells */}
+      {Object.entries(occupancy).map(([key, cell]) => {
+        const sData = sensors[key] || null;
+        if (cell.type === 'wall') {
+          return <WallCell key={key} cx={cell.cx} cy={cell.cy} prob={cell.prob} hits={cell.hits} />;
+        } else if (cell.type === 'free') {
+          return <FreeCell key={key} cx={cell.cx} cy={cell.cy} sensorData={sData} viewMode={viewMode} />;
+        } else if (cell.type === 'suspect') {
+          return <SuspectCell key={key} cx={cell.cx} cy={cell.cy} />;
+        }
+        return null;
+      })}
+
+      {/* Scan ray flash */}
+      <ScanRayFlash rays={raysVisible ? scanRays : []} roverPos={rover} fading={!raysVisible} />
+
+      {/* Path trail */}
+      <PathTrail history={history} />
+
+      {/* Rover */}
+      <RoverModel position={roverWorldPos} heading={roverWorldRot} />
+
+      {/* Camera rig */}
+      <CameraRig target={roverWorldPos} follow={followRover} />
+    </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  MAIN MAP3D COMPONENT
+// ═══════════════════════════════════════════════════════════════
+export default function Map3D() {
+  const [occupancy,   setOccupancy]   = useState({});
+  const [sensors,     setSensors]     = useState({});
+  const [rover,       setRover]       = useState({ x: 0, y: 0, heading: 0 });
+  const [history,     setHistory]     = useState([]);
+  const [stats,       setStats]       = useState({ wallCells:0, freeCells:0, totalReadings:0, scanCount:0, maxGas:0, maxTemp:-Infinity });
+  const [coverage,    setCoverage]    = useState(0);
+  const [scanRays,    setScanRays]    = useState([]);
+  const [raysVisible, setRaysVisible] = useState(false);
+  const [viewMode,    setViewMode]    = useState('default');
+  const [followRover, setFollowRover] = useState(false);
+  const [log,         setLog]         = useState([]);
+  const [connected,   setConnected]   = useState(false);
+  const [isReplaying, setIsReplaying] = useState(false);
+  const raysTimer = useRef(null);
+
+  // Fetch initial state
+  useEffect(() => {
+    fetch(`${SERVER}/map-state`).then(r => r.json()).then(d => {
+      if (d.occupancy) setOccupancy(d.occupancy);
+      if (d.sensors)   setSensors(d.sensors);
+      if (d.rover)     setRover(d.rover);
+      if (d.history)   setHistory(d.history);
+      if (d.stats)     setStats(d.stats);
+      if (d.coverage != null) setCoverage(d.coverage);
+    }).catch(() => {});
+
+    socket.on('connect',    () => setConnected(true));
+    socket.on('disconnect', () => setConnected(false));
+
+    socket.on('map-update', data => {
+      if (data.occupancy) setOccupancy({ ...data.occupancy });
+      if (data.sensors)   setSensors({ ...data.sensors });
+      if (data.rover)     setRover(data.rover);
+      if (data.history)   setHistory(data.history || []);
+      if (data.stats)     setStats(data.stats);
+      if (data.coverage != null) setCoverage(data.coverage);
+
+      // If it has scan rays, flash them
+      if (data.rover && data.occupancy) {
+        const latestScan = data.stats?.lastScan;
+        // Find rays from the socket (enriched by simulate)
+      }
+    });
+
+    socket.on('map-reset', () => {
+      setOccupancy({}); setSensors({}); setRover({ x:0,y:0,heading:0 });
+      setHistory([]); setStats({ wallCells:0, freeCells:0, totalReadings:0, scanCount:0, maxGas:0, maxTemp:-Infinity });
+      setCoverage(0); setLog([]);
+    });
+
+    return () => {
+      socket.off('connect'); socket.off('disconnect');
+      socket.off('map-update'); socket.off('map-reset');
+    };
+  }, []);
+
+  // Flash scan rays on new packet
+  const flashRays = useCallback((scan, roverPos) => {
+    if (!Array.isArray(scan) || scan.length === 0) return;
+    setScanRays(scan);
+    setRaysVisible(true);
+    clearTimeout(raysTimer.current);
+    raysTimer.current = setTimeout(() => setRaysVisible(false), 900);
+    setLog(prev => [{
+      time: new Date().toLocaleTimeString(),
+      text: `Scan @ (${Math.round(roverPos.x)}, ${Math.round(roverPos.y)}) — ${scan.length} rays`,
+      source: 'scan',
+    }, ...prev].slice(0, 30));
+  }, []);
+
+  // Simulate a scan packet (for testing without rover)
+  const doSimulate = useCallback(async (customData) => {
+    const angle = Math.random() * 360;
+    const body  = customData || {
+      x: rover.x + Math.sin(angle * Math.PI/180) * 40,
+      y: rover.y + Math.cos(angle * Math.PI/180) * 40,
+      heading: (rover.heading + (Math.random() > 0.8 ? 90 : 0)) % 360,
+      temp: 28 + Math.random() * 10,
+      hum: 55 + Math.random() * 20,
+      gas: 180 + Math.random() * 300,
+    };
+    try {
+      const r = await fetch(`${SERVER}/simulate`, { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(body) });
+      const d = await r.json();
+      // Immediately flash the fake scan rays from simulate endpoint's hardcoded scan
+      flashRays([
+        {a:0,d:120},{a:15,d:130},{a:30,d:145},{a:45,d:160},
+        {a:60,d:175},{a:75,d:180},{a:90,d:120},{a:105,d:130},
+        {a:120,d:150},{a:135,d:140},{a:150,d:125},{a:165,d:115},{a:180,d:100}
+      ], body);
+    } catch(e) {}
+  }, [rover, flashRays]);
+
+  // Replay mode
+  const doReplay = useCallback(async () => {
+    setIsReplaying(true);
+    try {
+      const r = await fetch(`${SERVER}/replay`);
+      const scans = await r.json();
+      if (!Array.isArray(scans) || scans.length === 0) {
+        setIsReplaying(false);
+        return;
+      }
+      // Reset and replay
+      await fetch(`${SERVER}/reset`, { method: 'POST' });
+      let i = 0;
+      const step = () => {
+        if (i >= scans.length) { setIsReplaying(false); return; }
+        const scan = scans[i++];
+        fetch(`${SERVER}/simulate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...scan, hum: scan.hum || 60 })
+        }).then(() => { if (scan.scan) flashRays(scan.scan, scan); setTimeout(step, 300); });
+      };
+      step();
+    } catch(e) { setIsReplaying(false); }
+  }, [flashRays]);
+
+  // Export map as JSON
+  const doExport = useCallback(() => {
+    const data = { occupancy, sensors, rover, history, stats, coverage, exported: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `room_scan_${Date.now()}.json`; a.click();
+  }, [occupancy, sensors, rover, history, stats, coverage]);
+
+  // Reset
+  const doReset = useCallback(() => {
+    fetch(`${SERVER}/reset`, { method: 'POST' }).catch(() => {});
+  }, []);
+
+  const cellCount     = Object.keys(occupancy).length;
+  const wallCount     = Object.values(occupancy).filter(c => c.type === 'wall').length;
+  const freeCount     = Object.values(occupancy).filter(c => c.type === 'free').length;
+  const suspectCount  = Object.values(occupancy).filter(c => c.type === 'suspect').length;
+  const qualityLevel  = stats.scanCount > 20 ? 'HIGH' : stats.scanCount > 5 ? 'MED' : 'LOW';
+
+  return (
+    <div style={{ height: '100vh', position: 'relative', overflow: 'hidden', background: '#030810' }}>
+
+      {/* ── 3D Canvas ── */}
+      <Canvas shadows camera={{ position: [6, 8, 6], fov: 50, near: 0.05, far: 500 }}>
+        <Scene
+          occupancy={occupancy}
+          sensors={sensors}
+          rover={rover}
+          history={history}
+          scanRays={scanRays}
+          raysVisible={raysVisible}
+          viewMode={viewMode}
+          followRover={followRover}
+        />
+        <OrbitControls
+          enableDamping dampingFactor={0.06}
+          minDistance={2} maxDistance={80}
+          target={[(rover.x / CELL_CM) * CELL_UNIT, 0, (rover.y / CELL_CM) * CELL_UNIT]}
+        />
+      </Canvas>
+
+      {/* ── Header bar ── */}
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: 50,
+        background: 'rgba(3,8,16,0.92)', backdropFilter: 'blur(12px)',
+        borderBottom: '1px solid rgba(0,212,255,0.15)',
+        display: 'flex', alignItems: 'center', padding: '0 16px', gap: 10, zIndex: 50,
+      }}>
+        {/* Status */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span className={`status-dot ${connected ? 'online' : 'offline'}`} />
+          <span style={{ ...M, fontSize: 9, color: connected ? 'var(--green)' : 'var(--red)' }}>
+            {connected ? 'LIVE' : 'OFFLINE'}
+          </span>
+        </div>
+        <div style={{ ...M, fontSize: 9, color: 'var(--text-dim)' }}>|</div>
+        <span style={{ ...M, fontSize: 10, color: 'var(--accent)', fontWeight: 700 }}>🛰 ROOM SCANNER</span>
+        <div style={{ ...M, fontSize: 9, color: 'var(--text-dim)' }}>
+          Coverage: <span style={{ color: '#34d399' }}>{coverage}%</span>
+          &nbsp;|&nbsp;Walls: <span style={{ color: '#3a7ab4' }}>{wallCount}</span>
+          &nbsp;|&nbsp;Floor: <span style={{ color: 'rgba(255,255,255,0.5)' }}>{freeCount}</span>
+          &nbsp;|&nbsp;Scans: <span style={{ color: '#a78bfa' }}>{stats.scanCount || 0}</span>
+        </div>
+
+        {/* Spacer */}
+        <div style={{ flex: 1 }} />
+
+        {/* View mode buttons */}
+        {['default', 'gas', 'temp', 'humidity'].map(mode => (
+          <button key={mode} onClick={() => setViewMode(mode)} style={{
+            ...M, fontSize: 8, padding: '4px 10px', borderRadius: 5, cursor: 'pointer',
+            background: viewMode === mode ? 'rgba(0,212,255,0.18)' : 'rgba(255,255,255,0.04)',
+            border: `1px solid ${viewMode === mode ? 'rgba(0,212,255,0.5)' : 'rgba(255,255,255,0.1)'}`,
+            color: viewMode === mode ? 'var(--accent)' : 'var(--text-dim)',
+            transition: 'all 0.15s',
+            textTransform: 'uppercase',
+          }}>{mode}</button>
+        ))}
+
+        <div style={{ ...M, fontSize: 9, color: 'rgba(255,255,255,0.1)' }}>|</div>
+
+        {/* Action buttons */}
+        <button onClick={doSimulate} style={{ ...M, fontSize: 8, padding: '4px 10px', borderRadius: 5, cursor: 'pointer',
+          background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: 'var(--green)' }}>
+          ⚡ SIMULATE
+        </button>
+        <button onClick={doReplay} disabled={isReplaying} style={{ ...M, fontSize: 8, padding: '4px 10px', borderRadius: 5, cursor: 'pointer',
+          background: 'rgba(139,92,246,0.12)', border: '1px solid rgba(139,92,246,0.3)', color: '#a78bfa',
+          opacity: isReplaying ? 0.5 : 1 }}>
+          {isReplaying ? '⏸ REPLAYING' : '▶ REPLAY'}
+        </button>
+        <button onClick={doExport} style={{ ...M, fontSize: 8, padding: '4px 10px', borderRadius: 5, cursor: 'pointer',
+          background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', color: 'var(--orange)' }}>
+          ↓ EXPORT
+        </button>
+        <button onClick={doReset} style={{ ...M, fontSize: 8, padding: '4px 10px', borderRadius: 5, cursor: 'pointer',
+          background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--red)' }}>
+          ↺ RESET
+        </button>
+        <button onClick={() => setFollowRover(f => !f)} style={{ ...M, fontSize: 8, padding: '4px 10px', borderRadius: 5, cursor: 'pointer',
+          background: followRover ? 'rgba(0,212,255,0.18)' : 'rgba(255,255,255,0.04)',
+          border: `1px solid ${followRover ? 'rgba(0,212,255,0.4)' : 'rgba(255,255,255,0.1)'}`,
+          color: followRover ? 'var(--accent)' : 'var(--text-dim)' }}>
+          📍 FOLLOW
+        </button>
+      </div>
+
+      {/* ── Right stats panel ── */}
+      <div style={{
+        position: 'absolute', top: 58, right: 12,
+        width: 200, zIndex: 40,
+        display: 'flex', flexDirection: 'column', gap: 8,
+      }}>
+        {/* Rover live */}
+        <div style={{ background: 'rgba(3,8,16,0.88)', backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(0,212,255,0.15)', borderRadius: 10, padding: '12px 14px' }}>
+          <div style={{ ...M, fontSize: 8, color: 'var(--text-dim)', letterSpacing: '0.2em', marginBottom: 8 }}>ROVER POSITION</div>
+          {[
+            ['X', `${rover.x.toFixed(0)} cm`, '#38bdf8'],
+            ['Y', `${rover.y.toFixed(0)} cm`, '#38bdf8'],
+            ['HDG', `${(rover.heading || 0).toFixed(0)}°`, '#a78bfa'],
+          ].map(([k, v, c]) => (
+            <div key={k} style={{ display:'flex', justifyContent:'space-between', marginBottom: 4 }}>
+              <span style={{ ...M, fontSize: 9, color: 'var(--text-dim)' }}>{k}</span>
+              <span style={{ ...M, fontSize: 10, color: c, fontWeight: 600 }}>{v}</span>
+            </div>
           ))}
         </div>
 
-        {/* Status */}
-        <div style={{ ...mono, fontSize: 16, color: safety.color, fontWeight: 700,
-          textShadow: `0 0 10px ${safety.color}` }}>{safety.label}</div>
+        {/* Map stats */}
+        <div style={{ background: 'rgba(3,8,16,0.88)', backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(0,212,255,0.15)', borderRadius: 10, padding: '12px 14px' }}>
+          <div style={{ ...M, fontSize: 8, color: 'var(--text-dim)', letterSpacing: '0.2em', marginBottom: 8 }}>MAP STATS</div>
+          {[
+            ['COVERAGE', `${coverage}%`, '#34d399'],
+            ['WALLS',    wallCount,       '#3a7ab4'],
+            ['SUSPECT',  suspectCount,    'rgba(58,122,180,0.6)'],
+            ['FLOOR',    freeCount,       'rgba(255,255,255,0.4)'],
+            ['SCANS',    stats.scanCount || 0, '#a78bfa'],
+            ['READS',    stats.totalReadings||0, '#06b6d4'],
+          ].map(([k, v, c]) => (
+            <div key={k} style={{ display:'flex', justifyContent:'space-between', marginBottom: 4 }}>
+              <span style={{ ...M, fontSize: 9, color: 'var(--text-dim)' }}>{k}</span>
+              <span style={{ ...M, fontSize: 10, color: c, fontWeight: 600 }}>{v}</span>
+            </div>
+          ))}
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(0,212,255,0.08)' }}>
+            <div style={{ ...M, fontSize: 8, color: 'var(--text-dim)', marginBottom: 3 }}>SCAN QUALITY</div>
+            <div style={{ ...M, fontSize: 10, fontWeight: 700,
+              color: qualityLevel==='HIGH' ? '#10b981' : qualityLevel==='MED' ? '#f59e0b' : '#6b7280' }}>
+              {qualityLevel}
+            </div>
+          </div>
+        </div>
 
-        {/* Actions */}
-        <div style={{ display: 'flex', gap: 7 }}>
-          <button onClick={() => setShowLog(v => !v)} className="btn" style={{
-            border: `1px solid ${showLog ? 'var(--accent)' : 'rgba(0,212,255,0.2)'}`,
-            background: showLog ? 'rgba(0,212,255,0.1)' : 'rgba(0,0,0,0.3)',
-            color: showLog ? 'var(--accent)' : 'rgba(0,212,255,0.35)',
-          }}>📡 LOG</button>
-          <button onClick={handleSimulate} disabled={simBusy || autoSim} className="btn" style={{
-            border: '1px solid rgba(82,196,26,0.4)',
-            background: (simBusy || autoSim) ? 'rgba(82,196,26,0.12)' : 'rgba(82,196,26,0.06)',
-            color: (simBusy || autoSim) ? 'rgba(82,196,26,0.4)' : 'rgba(82,196,26,0.7)',
-            cursor: (simBusy || autoSim) ? 'not-allowed' : 'pointer',
-          }}>⚡ STEP</button>
-          <button onClick={() => setAutoSim(v => !v)} className="btn" style={{
-            border: `1px solid ${autoSim ? 'var(--green)' : 'rgba(82,196,26,0.25)'}`,
-            background: autoSim ? 'rgba(82,196,26,0.2)' : 'rgba(0,0,0,0.3)',
-            color: autoSim ? 'var(--green)' : 'rgba(82,196,26,0.4)',
-            boxShadow: autoSim ? '0 0 10px rgba(82,196,26,0.35)' : 'none',
-            transition: 'all 0.2s',
-          }}>{autoSim ? '■ STOP' : '▶ AUTO'}</button>
-          <button onClick={handleReset} className="btn btn-danger">⟳ RESET</button>
+        {/* Sensor peaks */}
+        <div style={{ background: 'rgba(3,8,16,0.88)', backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(0,212,255,0.15)', borderRadius: 10, padding: '12px 14px' }}>
+          <div style={{ ...M, fontSize: 8, color: 'var(--text-dim)', letterSpacing: '0.2em', marginBottom: 8 }}>SENSOR PEAKS</div>
+          {[
+            ['MAX GAS',  stats.maxGas ? `${stats.maxGas} ppm` : '—', '#fb923c'],
+            ['MAX TEMP', stats.maxTemp !== -Infinity ? `${stats.maxTemp}°C` : '—', '#f87171'],
+            ['MIN TEMP', stats.minTemp !== Infinity  ? `${stats.minTemp}°C` : '—', '#38bdf8'],
+            ['MAX HUM',  stats.maxHum ? `${stats.maxHum}%` : '—', '#a78bfa'],
+          ].map(([k, v, c]) => (
+            <div key={k} style={{ display:'flex', justifyContent:'space-between', marginBottom: 4 }}>
+              <span style={{ ...M, fontSize: 9, color: 'var(--text-dim)' }}>{k}</span>
+              <span style={{ ...M, fontSize: 10, color: c, fontWeight: 600 }}>{v}</span>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* STATS (left) */}
-      <div style={{ position: 'absolute', top: 48, left: 12, zIndex: 20, display: 'flex', flexDirection: 'column', gap: 7 }}>
+      {/* ── Legend ── */}
+      <div style={{
+        position: 'absolute', bottom: 20, right: 12,
+        background: 'rgba(3,8,16,0.88)', backdropFilter: 'blur(12px)',
+        border: '1px solid rgba(0,212,255,0.15)', borderRadius: 10, padding: '10px 14px',
+        zIndex: 40, minWidth: 130,
+      }}>
+        <div style={{ ...M, fontSize: 8, color: 'var(--text-dim)', letterSpacing: '0.2em', marginBottom: 8 }}>LEGEND</div>
         {[
-          ['MAX GAS',   `${stats.maxGas}`,        'ppm',  '#ffa940'],
-          ['MAX TEMP',  `${stats.maxTemp}°`,       'C',    '#ff7875'],
-          ['MAX HUM',   `${stats.maxHum || 0}%`,   '',     '#69c0ff'],
-          ['CELLS',     cellCount,                 '',     'var(--accent)'],
-          ['OBSTACLES', stats.obstacleCount || 0,  '',     '#b37feb'],
-          ['READINGS',  stats.totalReadings || 0,  '',     '#36cfc9'],
-        ].map(([label, value, unit, color]) => (
-          <div key={label} style={{ ...glass, padding: '8px 12px', borderLeft: `2px solid ${color}`, minWidth: 100 }}>
-            <div style={{ ...mono, fontSize: 8, color: 'rgba(140,180,220,0.4)', letterSpacing: '0.18em', marginBottom: 2 }}>{label}</div>
-            <div style={{ ...mono, fontSize: 18, fontWeight: 700, color }}>
-              {value}<span style={{ fontSize: 10, fontWeight: 400, marginLeft: 2, opacity: 0.7 }}>{unit}</span>
+          ['Wall (confirmed)', '#3a7ab4'],
+          ['Wall (suspect)',   'rgba(58,122,180,0.4)'],
+          ['Free floor',       'rgba(255,255,255,0.2)'],
+          ['Rover trail',      '#00d4ff'],
+          ['Scan rays',        'rgba(0,212,255,0.5)'],
+        ].map(([label, color]) => (
+          <div key={label} style={{ display:'flex', alignItems:'center', gap: 8, marginBottom: 5 }}>
+            <div style={{ width: 10, height: 10, borderRadius: 2, background: color, flexShrink: 0 }} />
+            <span style={{ ...M, fontSize: 8, color: 'var(--text-dim)' }}>{label}</span>
+          </div>
+        ))}
+        {viewMode !== 'default' && (
+          <>
+            <div style={{ borderTop: '1px solid rgba(0,212,255,0.08)', margin: '6px 0', paddingTop: 6 }}>
+              <div style={{ ...M, fontSize: 8, color: 'var(--text-dim)', marginBottom: 4 }}>
+                HEATMAP ({viewMode.toUpperCase()})
+              </div>
+              {['#10b981', '#f59e0b', '#ef4444'].map((c, i) => (
+                <div key={i} style={{ display:'flex', alignItems:'center', gap: 8, marginBottom: 3 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 2, background: c, flexShrink: 0 }} />
+                  <span style={{ ...M, fontSize: 8, color: 'var(--text-dim)' }}>
+                    {i===0 ? 'Safe/Low' : i===1 ? 'Warning' : 'Danger/High'}
+                  </span>
+                </div>
+              ))}
             </div>
+          </>
+        )}
+      </div>
+
+      {/* ── Scan ray log ── */}
+      <div style={{
+        position: 'absolute', bottom: 20, left: 220,
+        width: 280, zIndex: 40,
+        background: 'rgba(3,8,16,0.85)', backdropFilter: 'blur(12px)',
+        border: '1px solid rgba(0,212,255,0.12)', borderRadius: 10, padding: '10px 14px',
+        maxHeight: 160, overflowY: 'auto',
+      }}>
+        <div style={{ ...M, fontSize: 8, color: 'var(--text-dim)', letterSpacing: '0.2em', marginBottom: 8 }}>📡 SCAN LOG</div>
+        {log.length === 0 ? (
+          <div style={{ ...M, fontSize: 9, color: 'var(--text-dim)' }}>No scans yet — press ⚡ SIMULATE or start rover</div>
+        ) : log.map((entry, i) => (
+          <div key={i} style={{ ...M, fontSize: 8, color: i === 0 ? 'var(--accent)' : 'var(--text-dim)',
+            marginBottom: 4, display: 'flex', gap: 8 }}>
+            <span style={{ opacity: 0.5, flexShrink: 0 }}>{entry.time}</span>
+            <span>{entry.text}</span>
           </div>
         ))}
       </div>
 
-      {/* COMPASS (right) */}
-      <div style={{ position: 'absolute', top: 48, right: 12, zIndex: 20, ...glass, padding: '12px 14px', textAlign: 'center' }}>
-        <div style={{ ...mono, fontSize: 8, color: 'rgba(140,180,220,0.4)', letterSpacing: '0.18em', marginBottom: 6 }}>ROVER</div>
-        <div style={{ position: 'relative', width: 56, height: 56, margin: '0 auto 8px' }}>
-          <svg viewBox="0 0 56 56" width={56} height={56} style={{ opacity: 0.5 }}>
-            <circle cx="28" cy="28" r="26" fill="none" stroke="rgba(0,212,255,0.5)" strokeWidth="1" />
-            {['N','E','S','W'].map((d, i) => (
-              <text key={d} x={28 + 18 * Math.sin(i * Math.PI / 2)} y={32 - 18 * Math.cos(i * Math.PI / 2)}
-                textAnchor="middle" fontSize="7" fill="rgba(0,212,255,0.8)" fontFamily="monospace">{d}</text>
-            ))}
-          </svg>
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            transform: `rotate(${rover.heading}deg)`, transition: 'transform 0.4s ease' }}>
-            <div style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent',
-              borderBottom: '18px solid #00d4ff', filter: 'drop-shadow(0 0 4px #00d4ff)' }} />
-          </div>
-        </div>
-        <div style={{ ...mono, fontSize: 14, fontWeight: 700, color: 'var(--accent)' }}>{Math.round(rover.heading)}°</div>
-        <div style={{ ...mono, fontSize: 8, color: 'rgba(140,180,220,0.35)', marginTop: 2 }}>
-          {(rover.x / 100).toFixed(1)}m {(rover.y / 100).toFixed(1)}m
-        </div>
-      </div>
+      {/* ── 2D Minimap ── */}
+      <Minimap2D occupancy={occupancy} rover={rover} size={190} />
 
-      {/* LOG PANEL (bottom centre) */}
-      {showLog && (
-        <div style={{ position: 'absolute', bottom: 14, left: '50%', transform: 'translateX(-50%)',
-          zIndex: 25, width: 480, ...glass, overflow: 'hidden' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '7px 12px', borderBottom: '1px solid rgba(0,212,255,0.1)',
-            background: 'rgba(0,212,255,0.03)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%',
-                background: rawLog.length ? 'var(--green)' : 'rgba(0,212,255,0.3)',
-                boxShadow: rawLog.length ? '0 0 6px var(--green)' : 'none' }} />
-              <span style={{ ...mono, fontSize: 9, color: 'rgba(140,180,220,0.55)', letterSpacing: '0.15em' }}>LIVE DATA FEED</span>
-              <span style={{ ...mono, fontSize: 8, padding: '1px 6px', borderRadius: 3,
-                background: 'rgba(0,212,255,0.07)', border: '1px solid rgba(0,212,255,0.18)',
-                color: 'rgba(0,212,255,0.5)' }}>{rawLog.length} packets</span>
-            </div>
-            {rawLog[0] && <span style={{ ...mono, fontSize: 8, color: 'rgba(140,180,220,0.35)' }}>Last #{rawLog[0].id}</span>}
-          </div>
-          <div style={{ maxHeight: 150, overflowY: 'auto' }}>
-            {rawLog.length === 0 ? (
-              <div style={{ padding: '14px', textAlign: 'center', ...mono, fontSize: 10, color: 'rgba(140,180,220,0.25)' }}>
-                Click ⚡ STEP or ▶ AUTO to test
-              </div>
-            ) : rawLog.slice(0, 6).map((entry, i) => {
-              const d = entry.data;
-              const isSim = entry.source === 'simulate';
-              return (
-                <div key={entry.id} style={{
-                  display: 'flex', alignItems: 'baseline', gap: 6, padding: '4px 12px',
-                  borderBottom: '1px solid rgba(0,212,255,0.05)',
-                  background: i === 0 ? (isSim ? 'rgba(82,196,26,0.06)' : 'rgba(0,212,255,0.05)') : 'transparent',
-                }}>
-                  <span style={{ ...mono, fontSize: 8, color: 'rgba(140,180,220,0.3)', minWidth: 26 }}>#{entry.id}</span>
-                  <span className={`badge ${isSim ? 'badge-sim' : 'badge-arduino'}`}>{isSim ? 'SIM' : 'ARDUINO'}</span>
-                  <span style={{ ...mono, fontSize: 10, flex: 1, color: 'rgba(200,230,255,0.8)' }}>
-                    <span style={{ color: '#ff7875' }}>T</span>{d.temp ?? d.temperature}°{'  '}
-                    <span style={{ color: '#69c0ff' }}>H</span>{d.humidity}%{'  '}
-                    <span style={{ color: '#ffa940' }}>G</span>{d.gas}{'  '}
-                    <span style={{ color: '#b37feb' }}>D</span>{d.distance}cm{'  '}
-                    <span style={{ color: 'rgba(0,212,255,0.4)' }}>({(+d.x).toFixed(0)},{(+d.y).toFixed(0)})</span>
-                    {d.obstacle && <span style={{ color: 'var(--red)', marginLeft: 4 }}>⚠</span>}
-                  </span>
-                  <span style={{ ...mono, fontSize: 8, color: 'rgba(140,180,220,0.25)', whiteSpace: 'nowrap' }}>
-                    {new Date(entry.ts).toLocaleTimeString()}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {/* ── Minimap label ── */}
+      <div style={{
+        position: 'absolute', bottom: 215, left: 20,
+        ...M, fontSize: 8, color: 'var(--text-dim)', letterSpacing: '0.15em',
+      }}>TOP-DOWN MAP</div>
 
-      {/* LEGEND (bottom left) */}
-      <div style={{ position: 'absolute', bottom: 14, left: 12, zIndex: 20, ...glass, padding: '10px 14px' }}>
-        <div style={{ ...mono, fontSize: 8, color: 'rgba(140,180,220,0.4)', letterSpacing: '0.18em', marginBottom: 7 }}>LEGEND</div>
-        {mode === 'gas'  && [['#00c853','Safe 0–200'],['#ffa940','Warning 200–400'],['#ff4d4f','Danger 400+']].map(([c, l]) => <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}><div style={{ width: 8, height: 8, background: c, borderRadius: 2, boxShadow: `0 0 5px ${c}` }} /><span style={{ ...mono, fontSize: 9, color: 'rgba(180,210,240,0.7)' }}>{l}</span></div>)}
-        {mode === 'temp' && [['#4499ff','Cool ≤20°C'],['#ffa940','Warm ~30°C'],['#ff4d4f','Hot 45°C+']].map(([c, l]) => <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}><div style={{ width: 8, height: 8, background: c, borderRadius: 2, boxShadow: `0 0 5px ${c}` }} /><span style={{ ...mono, fontSize: 9, color: 'rgba(180,210,240,0.7)' }}>{l}</span></div>)}
-        {mode === 'hum'  && [['#91d5ff','Dry 0–30%'],['#4499ff','Normal ~50%'],['#003a8c','Humid 80%+']].map(([c, l]) => <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}><div style={{ width: 8, height: 8, background: c, borderRadius: 2, boxShadow: `0 0 5px ${c}` }} /><span style={{ ...mono, fontSize: 9, color: 'rgba(180,210,240,0.7)' }}>{l}</span></div>)}
-        <div style={{ borderTop: '1px solid rgba(0,212,255,0.1)', marginTop: 6, paddingTop: 6 }}>
-          {[['#4a5568','Obstacle'],['#00d4ff','Rover'],['#39ff14','Origin']].map(([c,l]) => <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}><div style={{ width: 7, height: 7, background: c, borderRadius: '50%', boxShadow: `0 0 4px ${c}` }} /><span style={{ ...mono, fontSize: 9, color: 'rgba(180,210,240,0.6)' }}>{l}</span></div>)}
+      {/* ── Compass ── */}
+      <div style={{
+        position: 'absolute', top: 60, left: 12,
+        background: 'rgba(3,8,16,0.88)', backdropFilter: 'blur(12px)',
+        border: '1px solid rgba(0,212,255,0.15)', borderRadius: '50%',
+        width: 52, height: 52, zIndex: 40,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flexDirection: 'column',
+      }}>
+        <div style={{ fontSize: 18 }}>🧭</div>
+        <div style={{ ...M, fontSize: 7, color: '#a78bfa' }}>
+          {(rover.heading || 0).toFixed(0)}°
         </div>
       </div>
 
-      {/* ── THREE.JS CANVAS ── */}
-      <Canvas camera={{ position: [4, 6, 4], fov: 55, near: 0.05, far: 300 }}
-        shadows gl={{ antialias: true, alpha: false }}
-        style={{ width: '100%', height: '100%' }}
-        onCreated={({ gl }) => {
-          gl.setClearColor(new THREE.Color('#050b17'));
-          gl.shadowMap.enabled = true;
-          gl.shadowMap.type = THREE.PCFSoftShadowMap;
-        }}>
-        <SceneLighting />
-        <Grid args={[50, 50]} position={[0, 0, 0]}
-          cellColor="rgba(0,212,255,0.06)" sectionColor="rgba(0,212,255,0.14)"
-          cellSize={0.25} sectionSize={1} fadeDistance={35} infiniteGrid />
-
-        {/* Start origin */}
-        <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[0, 0.26, 32]} />
-          <meshStandardMaterial color="#39ff14" emissive="#39ff14" emissiveIntensity={0.9} transparent opacity={0.55} />
-        </mesh>
-
-        <ScanRing rover={rover} />
-        <RoverTrail history={pathHist} />
-
-        {Object.entries(grid).map(([key, cell]) => {
-          const [gx, gy] = key.split(',').map(Number);
-          return <GridCell key={key} gx={gx} gy={gy} cell={cell} mode={mode} />;
-        })}
-
-        <RoverMarker rover={rover} />
-        <CameraFollow rover={rover} orbitRef={orbitRef} />
-        <OrbitControls ref={orbitRef} enableDamping dampingFactor={0.07} minDistance={0.5} maxDistance={80} maxPolarAngle={Math.PI / 2.05} />
-      </Canvas>
     </div>
   );
 }
