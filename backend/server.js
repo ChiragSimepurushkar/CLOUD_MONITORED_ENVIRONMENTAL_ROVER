@@ -24,6 +24,20 @@ const io     = new Server(server, { cors: { origin: '*' } });
 app.use(cors());
 app.use(express.json({ limit: '512kb' }));  // scan[] payloads can be large
 
+// --- ADD THIS NEW ERROR CATCHER ---
+app.use((err, req, res, next) => {
+  if (err.type === 'request.aborted') {
+    console.log("⚠️ [Network] ESP8266 closed connection early. Ignoring packet.");
+    return res.status(400).send('Request aborted');
+  }
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    console.log("⚠️ [Network] Malformed JSON received. Ignoring packet.");
+    return res.status(400).send('Bad JSON');
+  }
+  next(err); // pass other errors down
+});
+// ----------------------------------
+
 // ─────────────────────────────────────────────
 //  MongoDB — dual schema
 // ─────────────────────────────────────────────
@@ -267,18 +281,6 @@ io.on('connection', socket => {
   socket.on('disconnect', () => console.log('[Socket] Disconnected:', socket.id));
 });
 
-// ─────────────────────────────────────────────
-//  Global Error Handler (Catches ESP8266 Aborts)
-// ─────────────────────────────────────────────
-app.use((err, req, res, next) => {
-  // Arduino ESP8266 often closes the TCP connection immediately after sending
-  // before Express finishes reading the JSON payload. This causes a 'request.aborted' error.
-  if (err.type === 'request.aborted') {
-    return res.status(400).end(); // Silently ignore to prevent console spam
-  }
-  console.error('[Server Error]', err.stack || err.message);
-  res.status(500).json({ error: err.message });
-});
 
 // ─────────────────────────────────────────────
 //  START
