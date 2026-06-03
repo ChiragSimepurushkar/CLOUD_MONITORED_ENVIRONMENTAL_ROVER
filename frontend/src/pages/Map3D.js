@@ -374,16 +374,22 @@ function Scene({ occupancy, sensors, rover, history, scanRays, raysVisible, view
       {/* Grid lines */}
       <Grid
         position={[0, 0, 0]}
-        args={[80, 80]}
+        args={[50, 50]}
         cellSize={CELL_UNIT}
         cellThickness={0.3}
-        cellColor="#0d1e38"
+        cellColor="rgba(0,212,255,0.06)"
         sectionSize={4}
         sectionThickness={0.5}
-        sectionColor="#0f2244"
-        fadeDistance={60}
+        sectionColor="rgba(0,212,255,0.14)"
+        fadeDistance={35}
         infiniteGrid
       />
+
+      {/* Green glowing start origin marker */}
+      <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0, 0.26, 32]} />
+        <meshStandardMaterial color="#39ff14" emissive="#39ff14" emissiveIntensity={0.9} transparent opacity={0.55} />
+      </mesh>
 
       {/* Occupancy cells */}
       {Object.entries(occupancy).map(([key, cell]) => {

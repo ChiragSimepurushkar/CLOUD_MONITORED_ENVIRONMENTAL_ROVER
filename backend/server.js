@@ -117,34 +117,45 @@ async function checkAlert(data, x, y) {
 // ══════════════════════════════════════════════
 
 // ── POST /rover-data  (Arduino — supports old and new firmware)
-app.post('/rover-data', async (req, res) => {
-  const d = req.body;
-  if (d.x === undefined) return res.status(400).json({ error: 'Missing x,y fields' });
-
-  let aborted = false;
-  req.on('close', () => { aborted = true; });
-
+app.post('/rover-data', (req, res) => {
   try {
-    const mapData = gridEngine.processPacket(d);
-    const entry = logPacket(d, Array.isArray(d.scan) ? 'arduino-scan' : 'arduino-legacy');
-    await checkAlert(d, d.x, d.y);
-    if (GridReading) GridReading.create({ ...d, sessionId }).catch(() => {});
+    const d = req.body;
+    if (!d || d.x === undefined) {
+      return res.status(400).end();
+    }
+
+    // 1. Process synchronously — no await, no yielding the event loop
+    const mapData  = gridEngine.processPacket(d);
+    const entry    = logPacket(d, Array.isArray(d.scan) ? 'arduino-scan' : 'arduino-legacy');
     const scanCount = Array.isArray(d.scan) ? d.scan.length : 0;
+
     console.log(`[#${entry.id}][${entry.source}] X=${d.x.toFixed(0)} Y=${d.y.toFixed(0)} Hdg=${d.heading}° T=${d.temp ?? d.temperature ?? '?'}°C H=${d.hum ?? d.humidity ?? '?'}% G=${d.gas}ppm Rays=${scanCount}`);
 
-    // ALWAYS broadcast to browser via socket.io — this is a SEPARATE channel from HTTP
-    // The Arduino closing its TCP connection should NOT block the browser from receiving data
-    io.emit('raw-data',   entry);
-    io.emit('map-update', { ...mapData, lastScan: Array.isArray(d.scan) ? d.scan : null });
-    io.emit('chart-update', chartBuffer.slice(-1)[0]);
+    // 2. DEEP CLONE all data before emitting — avoids mutable reference issues
+    //    socket.io can silently fail if objects contain shared/mutable references
+    const safeEntry   = JSON.parse(JSON.stringify(entry));
+    const safeMap     = JSON.parse(JSON.stringify({
+      ...mapData,
+      lastScan: Array.isArray(d.scan) ? d.scan : null
+    }));
+    const safeChart   = JSON.parse(JSON.stringify(chartBuffer.slice(-1)[0] || {}));
 
-    // Only send HTTP response if the Arduino hasn't already hung up
-    if (!aborted) {
-      res.json({ status: 'ok', packetId: entry.id, mapCells: mapData.cellCount });
-    }
+    // 3. BROADCAST immediately — before any async operations
+    io.emit('raw-data',     safeEntry);
+    io.emit('map-update',   safeMap);
+    io.emit('chart-update', safeChart);
+    console.log(`  → broadcast to ${io.engine.clientsCount} browser(s)`);
+
+    // 4. Fire-and-forget async stuff (alerts, DB) — don't block the response
+    checkAlert(d, d.x, d.y).catch(() => {});
+    if (GridReading) GridReading.create({ ...d, sessionId }).catch(() => {});
+
+    // 5. Try to respond to Arduino — may fail if TCP already closed
+    try { res.json({ status: 'ok', packetId: entry.id }); } catch(_) {}
+
   } catch(err) {
     console.error('[/rover-data] Error:', err.message);
-    if (!aborted) res.status(500).json({ error: err.message });
+    try { res.status(500).end(); } catch(_) {}
   }
 });
 
@@ -257,8 +268,9 @@ io.on('connection', socket => {
 
   // Send current state immediately on connect
   const state = gridEngine.getState();
-  socket.emit('map-update',  { ...state, lastScan: null });
-  socket.emit('chart-init',  chartBuffer);
+  // Deep clone to avoid mutable reference issues with socket.io serialization
+  socket.emit('map-update',  JSON.parse(JSON.stringify({ ...state, lastScan: null })));
+  socket.emit('chart-init',  JSON.parse(JSON.stringify(chartBuffer)));
 
   // ── SIMULATE via socket (avoids HTTP connection pool issues) ──
   socket.on('client-simulate', (data) => {
@@ -266,10 +278,11 @@ io.on('connection', socket => {
       const d       = buildSimPacket(data || {});
       const mapData = gridEngine.processPacket(d);
       const entry   = logPacket(d, 'simulate');
-      io.emit('raw-data',   entry);
-      io.emit('map-update', { ...mapData, lastScan: d.scan });
-      io.emit('chart-update', chartBuffer.slice(-1)[0]);
-      console.log(`[SIM WS #${entry.id}] X=${d.x} Y=${d.y} Hdg=${d.heading}`);
+      // Deep clone before emitting
+      io.emit('raw-data',     JSON.parse(JSON.stringify(entry)));
+      io.emit('map-update',   JSON.parse(JSON.stringify({ ...mapData, lastScan: d.scan })));
+      io.emit('chart-update', JSON.parse(JSON.stringify(chartBuffer.slice(-1)[0] || {})));
+      console.log(`[SIM WS #${entry.id}] X=${d.x} Y=${d.y} Hdg=${d.heading} → ${io.engine.clientsCount} browser(s)`);
     } catch(err) {
       console.error('[client-simulate] Error:', err.message);
       socket.emit('sim-error', { error: err.message });

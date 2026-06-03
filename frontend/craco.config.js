@@ -4,7 +4,7 @@
 module.exports = {
   webpack: {
     configure: (webpackConfig) => {
-      // Find and patch the source-map-loader rule to exclude node_modules
+      // 1. Exclude node_modules from source-map-loader entirely
       webpackConfig.module.rules.forEach((rule) => {
         if (rule.oneOf) {
           rule.oneOf.forEach((oneOfRule) => {
@@ -14,11 +14,9 @@ module.exports = {
             ) {
               oneOfRule.exclude = /node_modules/;
             }
-            // Also handle use arrays
             if (Array.isArray(oneOfRule.use)) {
               oneOfRule.use.forEach((use) => {
                 if (use.loader && use.loader.includes('source-map-loader')) {
-                  use.options = use.options || {};
                   oneOfRule.exclude = /node_modules/;
                 }
               });
@@ -26,6 +24,13 @@ module.exports = {
           });
         }
       });
+
+      // 2. Ignore source-map warnings from mediapipe
+      if (!webpackConfig.ignoreWarnings) {
+        webpackConfig.ignoreWarnings = [];
+      }
+      webpackConfig.ignoreWarnings.push(/Failed to parse source map/);
+
       return webpackConfig;
     },
   },
