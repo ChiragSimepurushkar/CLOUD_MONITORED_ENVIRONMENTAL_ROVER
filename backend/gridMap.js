@@ -5,10 +5,10 @@
 // ══════════════════════════════════════════════════════════════
 
 const CELL_CM    = 25;    // cm per grid cell
-const MAX_DIST   = 180;   // ignore rays > 180 cm (sensor noise)
+const MAX_DIST   = 400;   // HC-SR04 range is ~400cm; was 180 (too aggressive filter)
 const FREE_STEP  = 0.12;  // probability decrease per ray pass-through
-const OCC_BOOST  = 0.18;  // probability increase per ray hit
-const WALL_MIN_HITS = 3;  // minimum hits to confirm a wall cell
+const OCC_BOOST  = 0.22;  // probability increase per ray hit (was 0.18)
+const WALL_MIN_HITS = 2;  // minimum hits to confirm a wall (was 3 — too strict)
 const HIST_MAX   = 500;   // max history points kept
 
 // ── State ─────────────────────────────────────────────────────
@@ -76,6 +76,10 @@ function processPacket(data) {
   if (Array.isArray(data.scan) && data.scan.length > 0) {
     sessionStats.scanCount++;
 
+    // Log individual ray distances for debugging
+    const rayDists = data.scan.map(r => r.d || 0);
+    console.log(`  rays: [${rayDists.join(', ')}]`);
+
     data.scan.forEach(ray => {
       const d = ray.d || ray.dist || 0;
       if (d <= 0 || d > MAX_DIST) return;
@@ -100,8 +104,8 @@ function processPacket(data) {
         c.lastSeen = Date.now();
 
         if (idx === rayCells.length - 1) {
-          // Endpoint = potential wall
-          if (d < MAX_DIST - 10) {
+          // Endpoint = potential wall (only if ray didn't max out)
+          if (d < MAX_DIST - 20) {
             c.prob  = Math.min(0.97, c.prob + OCC_BOOST);
             c.hits += 1;
             if (c.prob > 0.65 && c.hits >= WALL_MIN_HITS) {

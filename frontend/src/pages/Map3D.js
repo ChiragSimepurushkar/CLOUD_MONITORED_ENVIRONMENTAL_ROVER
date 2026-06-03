@@ -262,6 +262,25 @@ function PathTrail({ history }) {
   );
 }
 
+// ── Pulsing scan ring (expanding circle around rover) ──────────
+function ScanRing({ roverWorldPos }) {
+  const ref = useRef(); const t = useRef(0); const period = 3.5;
+  useFrame((_, delta) => {
+    t.current = (t.current + delta) % period;
+    if (!ref.current) return;
+    const p = t.current / period;
+    ref.current.scale.setScalar(p * 8);
+    ref.current.material.opacity = (1 - p) * 0.22;
+    ref.current.position.set(roverWorldPos[0], 0.02, roverWorldPos[2]);
+  });
+  return (
+    <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]}>
+      <ringGeometry args={[0.18, 0.22, 48]} />
+      <meshStandardMaterial color="#00d4ff" transparent opacity={0.2} side={THREE.DoubleSide} />
+    </mesh>
+  );
+}
+
 // ── Camera that can follow rover ───────────────────────────────
 function CameraRig({ target, follow }) {
   const { camera } = useThree();
@@ -361,9 +380,12 @@ function Scene({ occupancy, sensors, rover, history, scanRays, raysVisible, view
 
   return (
     <>
-      <ambientLight intensity={0.35} />
-      <directionalLight position={[8, 12, 8]} intensity={0.7} castShadow />
-      <pointLight position={[roverWorldPos[0], 2, roverWorldPos[2]]} intensity={1.2} color="#00d4ff" distance={8} />
+      {/* Lighting — matches good commit */}
+      <ambientLight intensity={0.35} color="#0a1628" />
+      <directionalLight position={[10, 18, 8]} intensity={0.9} castShadow shadow-mapSize={[2048, 2048]} />
+      <directionalLight position={[-10, 12, -8]} intensity={0.35} color="#4477ff" />
+      <pointLight position={[roverWorldPos[0], 2, roverWorldPos[2]]} intensity={1.2} color="#00d4ff" distance={12} />
+      <hemisphereLight skyColor="#0a1628" groundColor="#000510" intensity={0.5} />
 
       {/* Ground plane */}
       <mesh position={[0, -0.01, 0]} receiveShadow rotation={[-Math.PI / 2, 0, 0]}>
@@ -390,6 +412,9 @@ function Scene({ occupancy, sensors, rover, history, scanRays, raysVisible, view
         <ringGeometry args={[0, 0.26, 32]} />
         <meshStandardMaterial color="#39ff14" emissive="#39ff14" emissiveIntensity={0.9} transparent opacity={0.55} />
       </mesh>
+
+      {/* Pulsing scan ring */}
+      <ScanRing roverWorldPos={roverWorldPos} />
 
       {/* Occupancy cells */}
       {Object.entries(occupancy).map(([key, cell]) => {
