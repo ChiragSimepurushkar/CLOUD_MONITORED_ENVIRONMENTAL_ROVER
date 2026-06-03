@@ -131,10 +131,15 @@ app.post('/rover-data', async (req, res) => {
     if (GridReading) GridReading.create({ ...d, sessionId }).catch(() => {});
     const scanCount = Array.isArray(d.scan) ? d.scan.length : 0;
     console.log(`[#${entry.id}][${entry.source}] X=${d.x.toFixed(0)} Y=${d.y.toFixed(0)} Hdg=${d.heading}° T=${d.temp ?? d.temperature ?? '?'}°C H=${d.hum ?? d.humidity ?? '?'}% G=${d.gas}ppm Rays=${scanCount}`);
+
+    // ALWAYS broadcast to browser via socket.io — this is a SEPARATE channel from HTTP
+    // The Arduino closing its TCP connection should NOT block the browser from receiving data
+    io.emit('raw-data',   entry);
+    io.emit('map-update', { ...mapData, lastScan: Array.isArray(d.scan) ? d.scan : null });
+    io.emit('chart-update', chartBuffer.slice(-1)[0]);
+
+    // Only send HTTP response if the Arduino hasn't already hung up
     if (!aborted) {
-      io.emit('raw-data',   entry);
-      io.emit('map-update', { ...mapData, lastScan: Array.isArray(d.scan) ? d.scan : null });
-      io.emit('chart-update', chartBuffer.slice(-1)[0]);
       res.json({ status: 'ok', packetId: entry.id, mapCells: mapData.cellCount });
     }
   } catch(err) {
