@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend
@@ -110,32 +110,39 @@ export default function Dashboard() {
   const [latest, setLatest] = useState(null);
   const [stats,  setStats]  = useState({ maxGas:0, maxTemp:-Infinity, minTemp:Infinity, maxHum:0, totalReadings:0, cellsVisited:0, obstacleCount:0 });
   const [online, setOnline] = useState(false);
+  const lastDataRef = useRef(0);
 
   useEffect(() => {
-    // Set initial state immediately
-    setOnline(socket.connected);
-
-    socket.on('connect',    () => setOnline(true));
-    socket.on('disconnect', () => setOnline(false));
+    // Fetch existing data immediately
     fetch(`${SERVER}/chart-data`).then(r => r.json())
       .then(d => { if (Array.isArray(d) && d.length) { setChart(d); setLatest(d[d.length-1]); } })
       .catch(() => {});
     fetch(`${SERVER}/map-state`).then(r => r.json())
       .then(d => { if (d.stats) setStats(d.stats); }).catch(() => {});
 
-    const onChart = pt  => { setChart(p => [...p, pt].slice(-60)); setLatest(pt); };
-    const onInit  = buf => { if (Array.isArray(buf) && buf.length) { setChart(buf); setLatest(buf[buf.length-1]); } };
+    const onChart = pt  => {
+      setChart(p => [...p, pt].slice(-60));
+      setLatest(pt);
+      lastDataRef.current = Date.now();
+      setOnline(true);
+    };
+    const onInit  = buf => { if (Array.isArray(buf) && buf.length) { setChart(buf); setLatest(buf[buf.length-1]); lastDataRef.current = Date.now(); setOnline(true); } };
     const onMap   = ({ stats: s }) => { if (s) setStats(s); };
     socket.on('chart-update', onChart);
     socket.on('chart-init',   onInit);
     socket.on('map-update',   onMap);
+    socket.on('disconnect', () => setOnline(false));
 
-    // Poll socket.connected every second — catches missed connect events
-    const pollId = setInterval(() => setOnline(socket.connected), 1000);
+    // Check if rover data is stale (>30s means no data)
+    const pollId = setInterval(() => {
+      if (lastDataRef.current > 0 && Date.now() - lastDataRef.current > 30000) {
+        setOnline(false);
+      }
+    }, 1000);
 
     return () => {
       clearInterval(pollId);
-      socket.off('connect'); socket.off('disconnect');
+      socket.off('disconnect');
       socket.off('chart-update', onChart); socket.off('chart-init', onInit); socket.off('map-update', onMap);
     };
   }, []);
@@ -160,7 +167,7 @@ export default function Dashboard() {
               display: 'flex', alignItems: 'center', gap: 5,
             }}>
               <span className={`status-dot ${online ? 'online' : 'offline'}`} style={{ width: 5, height: 5 }} />
-              {online ? 'LIVE STREAM' : 'DISCONNECTED'}
+              {online ? 'ROVER LIVE' : 'NO DATA'}
             </div>
           </div>
           <div style={{ ...M, fontSize: 10, color: 'var(--text-dim)', letterSpacing: '0.08em' }}>

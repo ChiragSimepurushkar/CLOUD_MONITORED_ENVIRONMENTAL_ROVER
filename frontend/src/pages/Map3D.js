@@ -136,59 +136,109 @@ function ScanRayFlash({ rays, roverPos, fading }) {
   );
 }
 
-// ── Rover Model (procedural) ───────────────────────────────────
+// ── Rover 3D Model (detailed, matches real bot) ──────────────
+//    Red chassis, 4 black/yellow wheels, blue servo
+//    block, Arduino PCB, sonar pole + twin eyes
 function RoverModel({ position, heading }) {
   const groupRef = useRef();
+  const ringRef  = useRef();
+  const t        = useRef(0);
 
-  useFrame(() => {
+  useFrame((_, delta) => {
+    t.current += delta;
     if (!groupRef.current) return;
     groupRef.current.position.lerp(new THREE.Vector3(...position), 0.12);
     const currentRot = groupRef.current.rotation.y;
     const diff = ((heading - currentRot + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
     groupRef.current.rotation.y += diff * 0.12;
+    if (ringRef.current) {
+      ringRef.current.scale.setScalar(1 + (Math.sin(t.current * 2) * 0.5 + 0.5) * 0.7);
+      ringRef.current.material.opacity = 0.7 - (Math.sin(t.current * 2) * 0.5 + 0.5) * 0.5;
+    }
   });
+
+  const wheels = [[-0.14, -0.10], [0.14, -0.10], [-0.14, 0.10], [0.14, 0.10]];
 
   return (
     <group ref={groupRef} position={position}>
-      {/* Chassis */}
-      <mesh castShadow>
-        <boxGeometry args={[0.7, 0.12, 0.85]} />
-        <meshStandardMaterial color="#cc1515" emissive="#cc1515" emissiveIntensity={0.25} />
+      {/* Pulsing ground ring */}
+      <mesh ref={ringRef} position={[0, 0.001, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.18, 0.28, 36]} />
+        <meshStandardMaterial color="#00d4ff" transparent opacity={0.5} side={THREE.DoubleSide} />
       </mesh>
-      {/* Wheels */}
-      {[[-0.38, -0.05, 0.28], [0.38, -0.05, 0.28], [-0.38, -0.05, -0.28], [0.38, -0.05, -0.28]].map(([x, y, z], i) => (
-        <mesh key={i} position={[x, y, z]} rotation={[0, 0, Math.PI / 2]} castShadow>
-          <cylinderGeometry args={[0.11, 0.11, 0.09, 12]} />
-          <meshStandardMaterial color="#1a1a1a" />
+
+      {/* Red main chassis */}
+      <mesh position={[0, 0.04, 0]} castShadow receiveShadow>
+        <boxGeometry args={[0.30, 0.04, 0.22]} />
+        <meshStandardMaterial color="#cc1515" roughness={0.4} metalness={0.25} emissive="#550000" emissiveIntensity={0.15} />
+      </mesh>
+
+      {/* Yellow side rails */}
+      {[-1, 1].map((s, i) => (
+        <mesh key={i} position={[0, 0.025, s * 0.092]} castShadow>
+          <boxGeometry args={[0.30, 0.018, 0.016]} />
+          <meshStandardMaterial color="#d4a800" roughness={0.35} metalness={0.45} />
         </mesh>
       ))}
-      {/* Arduino */}
-      <mesh position={[0, 0.1, 0.05]}>
-        <boxGeometry args={[0.48, 0.06, 0.55]} />
-        <meshStandardMaterial color="#1a5fb4" emissive="#1a5fb4" emissiveIntensity={0.3} />
+
+      {/* 4 Wheels: black tyre + yellow rim + axle */}
+      {wheels.map(([wx, wz], i) => (
+        <group key={i} position={[wx, 0.04, wz]}>
+          <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
+            <cylinderGeometry args={[0.048, 0.048, 0.036, 18]} />
+            <meshStandardMaterial color="#111111" roughness={0.95} />
+          </mesh>
+          <mesh rotation={[0, 0, Math.PI / 2]}>
+            <cylinderGeometry args={[0.030, 0.030, 0.037, 10]} />
+            <meshStandardMaterial color="#d4a800" roughness={0.3} metalness={0.6} />
+          </mesh>
+          <mesh rotation={[0, 0, Math.PI / 2]}>
+            <cylinderGeometry args={[0.010, 0.010, 0.055, 8]} />
+            <meshStandardMaterial color="#888888" metalness={0.8} roughness={0.2} />
+          </mesh>
+        </group>
+      ))}
+
+      {/* Arduino PCB (blue) */}
+      <mesh position={[0.01, 0.072, 0.015]} castShadow>
+        <boxGeometry args={[0.12, 0.007, 0.08]} />
+        <meshStandardMaterial color="#1a5fb4" roughness={0.5} emissive="#002244" emissiveIntensity={0.4} />
       </mesh>
+
+      {/* Motor shield (black layer on Arduino) */}
+      <mesh position={[0.01, 0.081, 0.015]} castShadow>
+        <boxGeometry args={[0.10, 0.006, 0.068]} />
+        <meshStandardMaterial color="#1a1a1a" roughness={0.7} />
+      </mesh>
+
+      {/* Blue servo/mount base */}
+      <mesh position={[-0.05, 0.087, -0.045]} castShadow>
+        <boxGeometry args={[0.055, 0.055, 0.050]} />
+        <meshStandardMaterial color="#1a3a8a" roughness={0.4} metalness={0.2} />
+      </mesh>
+
       {/* Sonar pole */}
-      <mesh position={[0, 0.35, 0.36]}>
-        <boxGeometry args={[0.06, 0.46, 0.06]} />
-        <meshStandardMaterial color="#1a3a8a" />
+      <mesh position={[-0.05, 0.137, -0.045]} castShadow>
+        <boxGeometry args={[0.018, 0.060, 0.018]} />
+        <meshStandardMaterial color="#223399" roughness={0.45} />
       </mesh>
-      {/* HC-SR04 eyes */}
-      {[-0.1, 0.1].map((x, i) => (
-        <mesh key={i} position={[x, 0.35, 0.42]}>
-          <cylinderGeometry args={[0.045, 0.045, 0.06, 10]} rotation={[Math.PI / 2, 0, 0]} />
-          <meshStandardMaterial color="#e0e0e0" emissive="white" emissiveIntensity={0.6} />
+
+      {/* Sonar sensor body */}
+      <mesh position={[-0.05, 0.180, -0.047]} castShadow>
+        <boxGeometry args={[0.060, 0.022, 0.038]} />
+        <meshStandardMaterial color="#999999" roughness={0.3} metalness={0.55} />
+      </mesh>
+
+      {/* HC-SR04 twin eyes */}
+      {[-0.017, 0.017].map((ox, i) => (
+        <mesh key={i} position={[-0.05 + ox, 0.180, -0.068]}>
+          <cylinderGeometry args={[0.009, 0.009, 0.012, 14]} />
+          <meshStandardMaterial color="#cccccc" metalness={0.85} roughness={0.1} emissive="#aaaaff" emissiveIntensity={0.25} />
         </mesh>
       ))}
-      {/* Direction indicator */}
-      <mesh position={[0, 0.2, 0.44]}>
-        <coneGeometry args={[0.1, 0.22, 6]} />
-        <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.9} transparent opacity={0.85} />
-      </mesh>
-      {/* Glow ring */}
-      <mesh position={[0, -0.08, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.45, 0.55, 32]} />
-        <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={1} transparent opacity={0.35} side={THREE.DoubleSide} />
-      </mesh>
+
+      {/* Cyan glow */}
+      <pointLight color="#00d4ff" intensity={1.6} distance={1.2} decay={2} position={[0, 0.05, 0]} />
     </group>
   );
 }
@@ -378,10 +428,11 @@ export default function Map3D() {
   const [viewMode,    setViewMode]    = useState('default');
   const [followRover, setFollowRover] = useState(false);
   const [log,         setLog]         = useState([]);
-  const [connected,   setConnected]   = useState(socket.connected);
+  const [connected,   setConnected]   = useState(false);
   const [isReplaying, setIsReplaying] = useState(false);
   const [isSimulating,setIsSimulating]= useState(false);
   const raysTimer = useRef(null);
+  const lastDataTime = useRef(0);
 
   // Flash scan rays — defined FIRST so useEffect can safely reference it
   const flashRays = useCallback((scan, roverPos) => {
@@ -409,7 +460,6 @@ export default function Map3D() {
       if (d.coverage != null) setCoverage(d.coverage);
     }).catch(() => {});
 
-    socket.on('connect',    () => setConnected(true));
     socket.on('disconnect', () => setConnected(false));
 
     socket.on('map-update', data => {
@@ -419,6 +469,10 @@ export default function Map3D() {
       if (data.history)   setHistory(data.history || []);
       if (data.stats)     setStats(data.stats);
       if (data.coverage != null) setCoverage(data.coverage);
+
+      // Mark rover as live when we receive data
+      lastDataTime.current = Date.now();
+      setConnected(true);
 
       // Flash scan rays if the update contains scan data
       if (data.lastScan && data.rover) {
@@ -433,14 +487,18 @@ export default function Map3D() {
     });
 
     return () => {
-      socket.off('connect'); socket.off('disconnect');
+      socket.off('disconnect');
       socket.off('map-update'); socket.off('map-reset');
     };
   }, [flashRays]);
 
-  // Poll socket.connected every second — ensures LIVE/OFFLINE is always correct
+  // Poll: if rover data is stale (>30s), show NO DATA
   useEffect(() => {
-    const id = setInterval(() => setConnected(socket.connected), 1000);
+    const id = setInterval(() => {
+      if (lastDataTime.current > 0 && Date.now() - lastDataTime.current > 30000) {
+        setConnected(false);
+      }
+    }, 1000);
     return () => clearInterval(id);
   }, []);
 
@@ -572,7 +630,7 @@ export default function Map3D() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span className={`status-dot ${connected ? 'online' : 'offline'}`} />
           <span style={{ ...M, fontSize: 9, color: connected ? 'var(--green)' : 'var(--red)' }}>
-            {connected ? 'LIVE' : 'OFFLINE'}
+            {connected ? 'ROVER LIVE' : 'NO DATA'}
           </span>
         </div>
         <div style={{ ...M, fontSize: 9, color: 'var(--text-dim)' }}>|</div>

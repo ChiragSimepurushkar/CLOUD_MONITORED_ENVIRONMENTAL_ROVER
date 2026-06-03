@@ -1,6 +1,6 @@
 import './index.css';
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import Dashboard from './pages/Dashboard';
 import Map3D     from './pages/Map3D';
@@ -76,7 +76,7 @@ function NavItem({ to, emoji, label, sub, alertCount }) {
   );
 }
 
-function Sidebar({ connected, packetCount, lastTs, alertCount }) {
+function Sidebar({ connected, roverLive, packetCount, lastTs, alertCount }) {
   return (
     <div style={{
       position: 'fixed', top: 0, left: 0, bottom: 0,
@@ -119,12 +119,15 @@ function Sidebar({ connected, packetCount, lastTs, alertCount }) {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span className={`status-dot ${connected ? 'online' : 'offline'}`} />
+              <span className={`status-dot ${roverLive ? 'online' : 'offline'}`} />
               <span style={{ ...M, fontSize: 10, fontWeight: 600,
-                color: connected ? 'var(--green)' : 'var(--red)',
-                letterSpacing: '0.1em' }}>{connected ? 'LIVE' : 'OFFLINE'}</span>
+                color: roverLive ? 'var(--green)' : 'var(--red)',
+                letterSpacing: '0.1em' }}>{roverLive ? 'ROVER LIVE' : 'NO DATA'}</span>
             </div>
-            <span style={{ ...M, fontSize: 8, color: 'var(--text-dim)' }}>WebSocket</span>
+            <span style={{ ...M, fontSize: 8, padding: '1px 5px', borderRadius: 3,
+              background: connected ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+              border: `1px solid ${connected ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`,
+              color: connected ? 'var(--green)' : 'var(--red)' }}>WS {connected ? '✓' : '✗'}</span>
           </div>
           <div style={{ display: 'flex', gap: 14 }}>
             <div>
@@ -164,24 +167,32 @@ function Sidebar({ connected, packetCount, lastTs, alertCount }) {
 
 export default function App() {
   const [connected,   setConnected]   = useState(false);
+  const [roverLive,   setRoverLive]   = useState(false);
   const [packetCount, setPacketCount] = useState(0);
   const [lastTs,      setLastTs]      = useState('');
   const [alertCount,  setAlertCount]  = useState(0);
+  const lastDataTime = useRef(0); // epoch ms of last raw-data
 
   useEffect(() => {
-    // Set initial state immediately (socket may already be connected)
     setConnected(socket.connected);
 
     socket.on('connect',    () => setConnected(true));
-    socket.on('disconnect', () => setConnected(false));
+    socket.on('disconnect', () => { setConnected(false); setRoverLive(false); });
     socket.on('raw-data',   e  => {
       setPacketCount(e.id);
       setLastTs(new Date(e.ts).toLocaleTimeString());
+      lastDataTime.current = Date.now();
+      setRoverLive(true);
     });
     socket.on('newAlert', () => setAlertCount(n => n + 1));
 
-    // Poll socket.connected every second — catches missed connect events
-    const pollId = setInterval(() => setConnected(socket.connected), 1000);
+    // Poll every second: check socket + check if rover data is stale (>30s)
+    const pollId = setInterval(() => {
+      setConnected(socket.connected);
+      if (lastDataTime.current > 0 && Date.now() - lastDataTime.current > 30000) {
+        setRoverLive(false);
+      }
+    }, 1000);
 
     return () => {
       clearInterval(pollId);
@@ -197,6 +208,7 @@ export default function App() {
       <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
         <Sidebar
           connected={connected}
+          roverLive={roverLive}
           packetCount={packetCount}
           lastTs={lastTs}
           alertCount={alertCount}
