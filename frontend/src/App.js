@@ -1,6 +1,6 @@
 import './index.css';
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, createContext, useContext } from 'react';
 import { io } from 'socket.io-client';
 import Dashboard from './pages/Dashboard';
 import Map3D     from './pages/Map3D';
@@ -10,6 +10,10 @@ import Alerts    from './pages/Alerts';
 const SERVER = process.env.REACT_APP_SERVER_URL || 'http://localhost:5000';
 const socket = io(SERVER, { transports: ['websocket', 'polling'] });
 export { socket, SERVER };
+
+// Theme context — shared with all pages
+export const ThemeContext = createContext('dark');
+export function useTheme() { return useContext(ThemeContext); }
 
 const M = { fontFamily: 'var(--font-mono)' };
 const S = { fontFamily: 'var(--font-sans)' };
@@ -76,7 +80,8 @@ function NavItem({ to, emoji, label, sub, alertCount }) {
   );
 }
 
-function Sidebar({ connected, roverLive, packetCount, lastTs, alertCount }) {
+function Sidebar({ connected, roverLive, packetCount, lastTs, alertCount, theme, onToggleTheme }) {
+  const isDark = theme === 'dark';
   return (
     <div style={{
       position: 'fixed', top: 0, left: 0, bottom: 0,
@@ -160,6 +165,24 @@ function Sidebar({ connected, roverLive, packetCount, lastTs, alertCount }) {
           Cloud-Monitored Environmental Rover<br />
           <span style={{ ...M, color: 'rgba(0,212,255,0.3)' }}>Chirag Simepurushkar</span>
         </div>
+        {/* Theme toggle */}
+        <button
+          onClick={onToggleTheme}
+          title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          style={{
+            marginTop: 10, width: '100%', padding: '8px 12px',
+            borderRadius: 8, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)',
+            border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)'}`,
+            color: 'var(--text-secondary)',
+            transition: 'all 0.3s',
+            ...M, fontSize: 9, letterSpacing: '0.1em',
+          }}
+        >
+          <span style={{ fontSize: 14 }}>{isDark ? '☀️' : '🌙'}</span>
+          {isDark ? 'LIGHT MODE' : 'DARK MODE'}
+        </button>
       </div>
     </div>
   );
@@ -171,7 +194,16 @@ export default function App() {
   const [packetCount, setPacketCount] = useState(0);
   const [lastTs,      setLastTs]      = useState('');
   const [alertCount,  setAlertCount]  = useState(0);
-  const lastDataTime = useRef(0); // epoch ms of last raw-data
+  const [theme,       setTheme]       = useState(() => localStorage.getItem('rover-theme') || 'dark');
+  const lastDataTime = useRef(0);
+
+  // Apply theme to DOM
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('rover-theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
 
   useEffect(() => {
     setConnected(socket.connected);
@@ -186,7 +218,6 @@ export default function App() {
     });
     socket.on('newAlert', () => setAlertCount(n => n + 1));
 
-    // Poll every second: check socket + check if rover data is stale (>30s)
     const pollId = setInterval(() => {
       setConnected(socket.connected);
       if (lastDataTime.current > 0 && Date.now() - lastDataTime.current > 30000) {
@@ -204,30 +235,34 @@ export default function App() {
   }, []);
 
   return (
-    <BrowserRouter>
-      <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-        <Sidebar
-          connected={connected}
-          roverLive={roverLive}
-          packetCount={packetCount}
-          lastTs={lastTs}
-          alertCount={alertCount}
-        />
-        <main style={{
-          marginLeft: 'var(--sidebar-w)',
-          flex: 1,
-          overflow: 'auto',
-          position: 'relative',
-          background: 'transparent',
-        }}>
-          <Routes>
-            <Route path="/"        element={<Dashboard />} />
-            <Route path="/map3d"   element={<Map3D />} />
-            <Route path="/history" element={<History />} />
-            <Route path="/alerts"  element={<Alerts />} />
-          </Routes>
-        </main>
-      </div>
-    </BrowserRouter>
+    <ThemeContext.Provider value={theme}>
+      <BrowserRouter>
+        <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+          <Sidebar
+            connected={connected}
+            roverLive={roverLive}
+            packetCount={packetCount}
+            lastTs={lastTs}
+            alertCount={alertCount}
+            theme={theme}
+            onToggleTheme={toggleTheme}
+          />
+          <main style={{
+            marginLeft: 'var(--sidebar-w)',
+            flex: 1,
+            overflow: 'auto',
+            position: 'relative',
+            background: 'transparent',
+          }}>
+            <Routes>
+              <Route path="/"        element={<Dashboard />} />
+              <Route path="/map3d"   element={<Map3D />} />
+              <Route path="/history" element={<History />} />
+              <Route path="/alerts"  element={<Alerts />} />
+            </Routes>
+          </main>
+        </div>
+      </BrowserRouter>
+    </ThemeContext.Provider>
   );
 }
