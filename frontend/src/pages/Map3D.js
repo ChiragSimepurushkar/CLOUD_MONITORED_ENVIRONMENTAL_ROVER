@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Grid } from '@react-three/drei';
+import { OrbitControls, Grid, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { socket, SERVER } from '../App';
 
@@ -28,6 +28,11 @@ function tempColor(c) {
   if (c > 30) return '#fb923c';
   return '#38bdf8';
 }
+function humColor(h) {
+  if (h > 80) return '#38bdf8';
+  if (h > 50) return '#22d3ee';
+  return '#a78bfa';
+}
 function lerpColor(a, b, t) {
   const ca = new THREE.Color(a), cb = new THREE.Color(b);
   return '#' + new THREE.Color(
@@ -36,6 +41,25 @@ function lerpColor(a, b, t) {
     ca.b + (cb.b - ca.b) * t
   ).getHexString();
 }
+// Blend 3 sensor colors for ALL mode
+function allModeColor(sensor) {
+  const gc = new THREE.Color(gasColor(sensor.avgGas ?? 0));
+  const tc = new THREE.Color(tempColor(sensor.avgTemp ?? 25));
+  const hc = new THREE.Color(humColor(sensor.avgHum ?? 50));
+  return '#' + new THREE.Color(
+    gc.r * 0.4 + tc.r * 0.35 + hc.r * 0.25,
+    gc.g * 0.4 + tc.g * 0.35 + hc.g * 0.25,
+    gc.b * 0.4 + tc.b * 0.35 + hc.b * 0.25
+  ).getHexString();
+}
+
+// ── Floating label styles ─────────────────────────────────────
+const labelBase = {
+  fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+  pointerEvents: 'none', userSelect: 'none',
+  textShadow: '0 0 8px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,0.7)',
+  lineHeight: 1.2,
+};
 
 // ── Wall Cell ─────────────────────────────────────────────────
 function WallCell({ cx, cy, prob, hits }) {
@@ -68,42 +92,129 @@ function SuspectCell({ cx, cy }) {
   );
 }
 
-// ── Free Floor Cell ────────────────────────────────────────────
+// ── Free Floor Cell (with floating sensor labels) ──────────────
 function FreeCell({ cx, cy, sensorData, viewMode }) {
   let color = '#0a1e35';
   let emissive = '#0a1e35';
   let emissiveIntensity = 0.04;
   let height = 0.04;
+  let labelContent = null;
 
   if (sensorData) {
-    if (viewMode === 'gas' && sensorData.avgGas != null) {
+    const hasGas  = sensorData.avgGas  != null;
+    const hasTemp = sensorData.avgTemp != null;
+    const hasHum  = sensorData.avgHum  != null;
+
+    if (viewMode === 'gas' && hasGas) {
       color   = gasColor(sensorData.avgGas);
       emissive = color;
       emissiveIntensity = 0.15;
       height = 0.04 + (sensorData.avgGas / 600) * 0.3;
-    } else if (viewMode === 'temp' && sensorData.avgTemp != null) {
+      labelContent = (
+        <div style={{ ...labelBase, textAlign: 'center' }}>
+          <div style={{ fontSize: 7, color: 'rgba(200,220,240,0.6)', letterSpacing: '0.12em' }}>GAS</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: gasColor(sensorData.avgGas) }}>
+            {Math.round(sensorData.avgGas)}
+          </div>
+          <div style={{ fontSize: 6, color: 'rgba(200,220,240,0.45)' }}>ppm</div>
+        </div>
+      );
+    } else if (viewMode === 'temp' && hasTemp) {
       color   = tempColor(sensorData.avgTemp);
       emissive = color;
       emissiveIntensity = 0.12;
-    } else if (viewMode === 'humidity' && sensorData.avgHum != null) {
+      height = 0.04 + Math.max(0, (sensorData.avgTemp - 20) / 30) * 0.2;
+      labelContent = (
+        <div style={{ ...labelBase, textAlign: 'center' }}>
+          <div style={{ fontSize: 7, color: 'rgba(200,220,240,0.6)', letterSpacing: '0.12em' }}>TEMP</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: tempColor(sensorData.avgTemp) }}>
+            {sensorData.avgTemp.toFixed(1)}°
+          </div>
+        </div>
+      );
+    } else if (viewMode === 'humidity' && hasHum) {
       const h = sensorData.avgHum / 100;
       color   = lerpColor('#1e3a5f', '#38bdf8', h);
       emissive = color;
       emissiveIntensity = 0.1;
+      height = 0.04 + h * 0.15;
+      labelContent = (
+        <div style={{ ...labelBase, textAlign: 'center' }}>
+          <div style={{ fontSize: 7, color: 'rgba(200,220,240,0.6)', letterSpacing: '0.12em' }}>HUM</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: humColor(sensorData.avgHum) }}>
+            {Math.round(sensorData.avgHum)}%
+          </div>
+        </div>
+      );
+    } else if (viewMode === 'all' && (hasGas || hasTemp || hasHum)) {
+      color   = allModeColor(sensorData);
+      emissive = color;
+      emissiveIntensity = 0.14;
+      height = 0.04 + (hasGas ? (sensorData.avgGas / 800) * 0.2 : 0);
+      labelContent = (
+        <div style={{ ...labelBase, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 1 }}>
+          {hasTemp && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3, justifyContent: 'center' }}>
+              <span style={{ fontSize: 8 }}>🌡</span>
+              <span style={{ fontSize: 9, fontWeight: 700, color: tempColor(sensorData.avgTemp) }}>
+                {sensorData.avgTemp.toFixed(1)}°
+              </span>
+            </div>
+          )}
+          {hasHum && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3, justifyContent: 'center' }}>
+              <span style={{ fontSize: 8 }}>💧</span>
+              <span style={{ fontSize: 9, fontWeight: 700, color: humColor(sensorData.avgHum) }}>
+                {Math.round(sensorData.avgHum)}%
+              </span>
+            </div>
+          )}
+          {hasGas && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3, justifyContent: 'center' }}>
+              <span style={{ fontSize: 8 }}>💨</span>
+              <span style={{ fontSize: 9, fontWeight: 700, color: gasColor(sensorData.avgGas) }}>
+                {Math.round(sensorData.avgGas)}
+              </span>
+            </div>
+          )}
+        </div>
+      );
     }
   }
 
   return (
-    <mesh position={[cx * CELL_UNIT, height / 2, cy * CELL_UNIT]} receiveShadow>
-      <boxGeometry args={[CELL_UNIT * 0.96, height, CELL_UNIT * 0.96]} />
-      <meshStandardMaterial
-        color={color}
-        emissive={emissive}
-        emissiveIntensity={emissiveIntensity}
-        transparent
-        opacity={0.85}
-      />
-    </mesh>
+    <group>
+      <mesh position={[cx * CELL_UNIT, height / 2, cy * CELL_UNIT]} receiveShadow>
+        <boxGeometry args={[CELL_UNIT * 0.96, height, CELL_UNIT * 0.96]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={emissive}
+          emissiveIntensity={emissiveIntensity}
+          transparent
+          opacity={0.85}
+        />
+      </mesh>
+      {labelContent && (
+        <Html
+          position={[cx * CELL_UNIT, height + 0.35, cy * CELL_UNIT]}
+          center
+          distanceFactor={6}
+          occlude={false}
+          style={{ pointerEvents: 'none' }}
+        >
+          <div style={{
+            background: 'rgba(3,8,18,0.75)',
+            backdropFilter: 'blur(4px)',
+            borderRadius: 6,
+            padding: '3px 6px',
+            border: '1px solid rgba(0,212,255,0.2)',
+            boxShadow: '0 0 10px rgba(0,212,255,0.15)',
+          }}>
+            {labelContent}
+          </div>
+        </Html>
+      )}
+    </group>
   );
 }
 
@@ -677,15 +788,20 @@ export default function Map3D() {
         <div style={{ flex: 1 }} />
 
         {/* View mode buttons */}
-        {['default', 'gas', 'temp', 'humidity'].map(mode => (
-          <button key={mode} onClick={() => setViewMode(mode)} style={{
+        {[
+          { key: 'default', label: '🗺 DEFAULT', icon: '' },
+          { key: 'gas',     label: '💨 GAS',     icon: '' },
+          { key: 'temp',    label: '🌡 TEMP',    icon: '' },
+          { key: 'humidity',label: '💧 HUMID',   icon: '' },
+          { key: 'all',     label: '📊 ALL',     icon: '' },
+        ].map(({ key, label }) => (
+          <button key={key} onClick={() => setViewMode(key)} style={{
             ...M, fontSize: 8, padding: '4px 10px', borderRadius: 5, cursor: 'pointer',
-            background: viewMode === mode ? 'rgba(0,212,255,0.18)' : 'rgba(255,255,255,0.04)',
-            border: `1px solid ${viewMode === mode ? 'rgba(0,212,255,0.5)' : 'rgba(255,255,255,0.1)'}`,
-            color: viewMode === mode ? 'var(--accent)' : 'var(--text-dim)',
+            background: viewMode === key ? 'rgba(0,212,255,0.18)' : 'rgba(255,255,255,0.04)',
+            border: `1px solid ${viewMode === key ? 'rgba(0,212,255,0.5)' : 'rgba(255,255,255,0.1)'}`,
+            color: viewMode === key ? 'var(--accent)' : 'var(--text-dim)',
             transition: 'all 0.15s',
-            textTransform: 'uppercase',
-          }}>{mode}</button>
+          }}>{label}</button>
         ))}
 
         <div style={{ ...M, fontSize: 9, color: 'rgba(255,255,255,0.1)' }}>|</div>
