@@ -455,7 +455,7 @@ function Minimap2D({ occupancy, rover, size = 180, theme }) {
     ctx.fillRect(0, 0, size, size);
 
     if (!occupancy || Object.keys(occupancy).length === 0) {
-      ctx.fillStyle = 'rgba(0,212,255,0.2)';
+      ctx.fillStyle = isDark ? 'rgba(0,212,255,0.2)' : 'rgba(0,100,200,0.25)';
       ctx.font = '10px monospace';
       ctx.fillText('No data yet', 30, size / 2);
       return;
@@ -475,9 +475,9 @@ function Minimap2D({ occupancy, rover, size = 180, theme }) {
     cells.forEach(cell => {
       const px = offsetX + (cell.cx - minCx) * cellPx;
       const py = offsetY + (cell.cy - minCy) * cellPx;
-      if (cell.type === 'wall')    ctx.fillStyle = '#3a7ab4';
-      else if (cell.type === 'free')   ctx.fillStyle = 'rgba(255,255,255,0.18)';
-      else if (cell.type === 'suspect') ctx.fillStyle = 'rgba(58,122,180,0.25)';
+      if      (cell.type === 'wall')    ctx.fillStyle = isDark ? '#3a7ab4' : '#2d5fa0';
+      else if (cell.type === 'free')    ctx.fillStyle = isDark ? 'rgba(0,212,255,0.12)' : 'rgba(0,80,180,0.10)';
+      else if (cell.type === 'suspect') ctx.fillStyle = isDark ? 'rgba(58,122,180,0.25)' : 'rgba(45,95,160,0.18)';
       else                              ctx.fillStyle = 'transparent';
       if (cell.type !== 'unknown') ctx.fillRect(px, py, cellPx - 1, cellPx - 1);
     });
@@ -487,7 +487,7 @@ function Minimap2D({ occupancy, rover, size = 180, theme }) {
     const ry = offsetY + ((rover.y / CELL_CM) - minCy) * cellPx + cellPx / 2;
     ctx.beginPath();
     ctx.arc(rx, ry, Math.max(3, cellPx / 2), 0, Math.PI * 2);
-    ctx.fillStyle = '#00d4ff';
+    ctx.fillStyle = isDark ? '#00d4ff' : '#0077cc';
     ctx.fill();
 
     // Heading arrow
@@ -495,10 +495,10 @@ function Minimap2D({ occupancy, rover, size = 180, theme }) {
     ctx.beginPath();
     ctx.moveTo(rx, ry);
     ctx.lineTo(rx + Math.sin(hdgRad) * 10, ry + Math.cos(hdgRad) * 10);
-    ctx.strokeStyle = '#00d4ff';
+    ctx.strokeStyle = isDark ? '#00d4ff' : '#0077cc';
     ctx.lineWidth = 1.5;
     ctx.stroke();
-  }, [occupancy, rover, size]);
+  }, [occupancy, rover, size, bgColor, isDark]);
 
   return (
     <canvas ref={canvasRef} width={size} height={size}
