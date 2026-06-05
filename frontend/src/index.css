@@ -99,10 +99,10 @@
   --cyan:           #0891b2;
   --pink:           #db2777;
 
-  /* Text */
-  --text-primary:   rgba(26, 26, 46, 0.92);
-  --text-secondary: rgba(74, 85, 104, 0.72);
-  --text-dim:       rgba(136, 146, 164, 0.65);
+  /* Text — bright and crisp on white */
+  --text-primary:   #1a1a2e;
+  --text-secondary: #3d4a5c;
+  --text-dim:       #6b7a94;
 
   /* Borders */
   --border:         rgba(0, 0, 0, 0.08);

@@ -26,6 +26,9 @@ const NAV = [
 ];
 
 function NavItem({ to, emoji, label, sub, alertCount }) {
+  const theme  = useTheme();
+  const isDark = theme === 'dark';
+
   return (
     <NavLink to={to} end={to === '/'} style={({ isActive }) => ({
       display: 'block',
@@ -33,9 +36,15 @@ function NavItem({ to, emoji, label, sub, alertCount }) {
       padding: '10px 14px',
       margin: '2px 10px',
       borderRadius: '10px',
-      background: isActive ? 'rgba(0,212,255,0.10)' : 'transparent',
-      border: isActive ? '1px solid rgba(0,212,255,0.25)' : '1px solid transparent',
-      boxShadow: isActive ? 'inset 0 0 20px rgba(0,212,255,0.05)' : 'none',
+      background: isActive
+        ? (isDark ? 'rgba(0,212,255,0.10)' : 'rgba(0,100,200,0.07)')
+        : 'transparent',
+      border: isActive
+        ? `1px solid ${isDark ? 'rgba(0,212,255,0.25)' : 'rgba(0,100,200,0.20)'}`
+        : '1px solid transparent',
+      boxShadow: isActive
+        ? (isDark ? 'inset 0 0 20px rgba(0,212,255,0.05)' : '0 1px 6px rgba(0,100,200,0.08)')
+        : 'none',
       transition: 'all 0.2s ease',
       position: 'relative',
     })}>
@@ -45,16 +54,24 @@ function NavItem({ to, emoji, label, sub, alertCount }) {
             width: 36, height: 36, borderRadius: 8, flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 18,
-            background: isActive ? 'rgba(0,212,255,0.15)' : 'rgba(255,255,255,0.04)',
-            border: `1px solid ${isActive ? 'rgba(0,212,255,0.35)' : 'rgba(255,255,255,0.06)'}`,
-            boxShadow: isActive ? '0 0 12px rgba(0,212,255,0.3)' : 'none',
+            background: isActive
+              ? (isDark ? 'rgba(0,212,255,0.15)' : 'rgba(0,100,200,0.10)')
+              : (isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'),
+            border: `1px solid ${isActive
+              ? (isDark ? 'rgba(0,212,255,0.35)' : 'rgba(0,100,200,0.25)')
+              : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)')}`,
+            boxShadow: isActive
+              ? (isDark ? '0 0 12px rgba(0,212,255,0.3)' : '0 2px 8px rgba(0,100,200,0.12)')
+              : 'none',
             transition: 'all 0.2s',
           }}>{emoji}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{
               ...M, fontSize: 12, fontWeight: 600, letterSpacing: '0.05em',
-              color: isActive ? 'var(--accent)' : 'rgba(200,225,255,0.75)',
-              textShadow: isActive ? '0 0 10px rgba(0,212,255,0.5)' : 'none',
+              color: isActive
+                ? 'var(--accent)'
+                : (isDark ? 'rgba(200,225,255,0.75)' : '#2d3748'),
+              textShadow: isActive && isDark ? '0 0 10px rgba(0,212,255,0.5)' : 'none',
               marginBottom: 2,
             }}>{label}</div>
             <div style={{ ...M, fontSize: 9, color: 'var(--text-dim)', letterSpacing: '0.08em' }}>{sub}</div>
@@ -71,7 +88,7 @@ function NavItem({ to, emoji, label, sub, alertCount }) {
               position: 'absolute', right: -10, top: '50%', transform: 'translateY(-50%)',
               width: 3, height: 24, background: 'var(--accent)',
               borderRadius: '2px 0 0 2px',
-              boxShadow: '0 0 8px var(--accent)',
+              boxShadow: isDark ? '0 0 8px var(--accent)' : 'none',
             }} />
           )}
         </div>
@@ -82,32 +99,46 @@ function NavItem({ to, emoji, label, sub, alertCount }) {
 
 function Sidebar({ connected, roverLive, packetCount, lastTs, alertCount, theme, onToggleTheme }) {
   const isDark = theme === 'dark';
+
+  // Sidebar panel theme vars
+  const sidebarBg  = isDark
+    ? 'linear-gradient(180deg, rgba(6,12,24,0.98) 0%, rgba(3,5,12,0.99) 100%)'
+    : 'linear-gradient(180deg, rgba(255,255,255,0.97) 0%, rgba(245,248,252,0.98) 100%)';
+  const sidebarBdr = isDark ? '1px solid var(--border)' : '1px solid rgba(0,80,160,0.10)';
+  const logoBdr    = isDark ? '1px solid rgba(0,212,255,0.08)' : '1px solid rgba(0,80,160,0.06)';
+  const accentLine = isDark
+    ? 'linear-gradient(90deg, var(--accent), var(--purple), transparent)'
+    : 'linear-gradient(90deg, #0099cc, #6d28d9, transparent)';
+
   return (
     <div style={{
       position: 'fixed', top: 0, left: 0, bottom: 0,
       width: 'var(--sidebar-w)', zIndex: 100,
-      background: 'linear-gradient(180deg, rgba(6,12,24,0.98) 0%, rgba(3,5,12,0.99) 100%)',
-      borderRight: '1px solid var(--border)',
+      background: sidebarBg,
+      borderRight: sidebarBdr,
       backdropFilter: 'blur(24px)',
       display: 'flex', flexDirection: 'column',
       overflow: 'hidden',
     }}>
       {/* Top accent line */}
-      <div style={{ height: 2, background: 'linear-gradient(90deg, var(--accent), var(--purple), transparent)', flexShrink: 0 }} />
+      <div style={{ height: 2, background: accentLine, flexShrink: 0 }} />
 
       {/* Logo area */}
-      <div style={{ padding: '20px 18px 16px', borderBottom: '1px solid rgba(0,212,255,0.08)', flexShrink: 0 }}>
+      <div style={{ padding: '20px 18px 16px', borderBottom: logoBdr, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
             width: 40, height: 40, borderRadius: 10, flexShrink: 0,
-            background: 'linear-gradient(135deg, rgba(0,212,255,0.2), rgba(124,58,237,0.2))',
-            border: '1px solid rgba(0,212,255,0.3)',
+            background: isDark
+              ? 'linear-gradient(135deg, rgba(0,212,255,0.2), rgba(124,58,237,0.2))'
+              : 'linear-gradient(135deg, rgba(0,153,204,0.12), rgba(109,40,217,0.10))',
+            border: isDark ? '1px solid rgba(0,212,255,0.3)' : '1px solid rgba(0,100,200,0.2)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 22, boxShadow: '0 0 16px rgba(0,212,255,0.2)',
+            fontSize: 22,
+            boxShadow: isDark ? '0 0 16px rgba(0,212,255,0.2)' : '0 2px 8px rgba(0,100,200,0.10)',
           }}>🛰</div>
           <div>
             <div style={{ ...M, fontSize: 12, fontWeight: 700, color: 'var(--accent)', letterSpacing: '0.12em',
-              textShadow: '0 0 12px rgba(0,212,255,0.5)' }}>ROVER TWIN</div>
+              textShadow: isDark ? '0 0 12px rgba(0,212,255,0.5)' : 'none' }}>ROVER TWIN</div>
             <div style={{ ...M, fontSize: 8, color: 'var(--text-dim)', letterSpacing: '0.16em', marginTop: 2 }}>
               ENV MONITOR v3.0
             </div>
@@ -116,7 +147,7 @@ function Sidebar({ connected, roverLive, packetCount, lastTs, alertCount, theme,
       </div>
 
       {/* Live status card */}
-      <div style={{ padding: '12px 18px', borderBottom: '1px solid rgba(0,212,255,0.06)', flexShrink: 0 }}>
+      <div style={{ padding: '12px 18px', borderBottom: logoBdr, flexShrink: 0 }}>
         <div style={{
           padding: '10px 14px', borderRadius: 10,
           background: connected ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)',
@@ -142,7 +173,7 @@ function Sidebar({ connected, roverLive, packetCount, lastTs, alertCount, theme,
             {lastTs && (
               <div>
                 <div style={{ ...M, fontSize: 7, color: 'var(--text-dim)', letterSpacing: '0.16em', marginBottom: 2 }}>LAST RX</div>
-                <div style={{ ...M, fontSize: 11, color: 'rgba(200,225,255,0.6)' }}>{lastTs}</div>
+                <div style={{ ...M, fontSize: 11, color: 'var(--text-secondary)' }}>{lastTs}</div>
               </div>
             )}
           </div>
@@ -160,10 +191,10 @@ function Sidebar({ connected, roverLive, packetCount, lastTs, alertCount, theme,
       </nav>
 
       {/* Footer */}
-      <div style={{ padding: '14px 18px', borderTop: '1px solid rgba(0,212,255,0.06)', flexShrink: 0 }}>
+      <div style={{ padding: '14px 18px', borderTop: logoBdr, flexShrink: 0 }}>
         <div style={{ ...S, fontSize: 9, color: 'var(--text-dim)', lineHeight: 1.7 }}>
           Cloud-Monitored Environmental Rover<br />
-          <span style={{ ...M, color: 'rgba(0,212,255,0.3)' }}>Chirag Simepurushkar</span>
+          <span style={{ ...M, color: isDark ? 'rgba(0,212,255,0.3)' : 'rgba(0,100,200,0.45)' }}>Chirag Simepurushkar</span>
         </div>
         {/* Theme toggle */}
         <button

@@ -53,12 +53,12 @@ function allModeColor(sensor) {
   ).getHexString();
 }
 
-// ── Floating label styles ─────────────────────────────────────
+// ── Floating label styles ────────────────────────────────────────────
 const labelBase = {
   fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
   pointerEvents: 'none', userSelect: 'none',
-  textShadow: '0 0 8px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,0.7)',
   lineHeight: 1.2,
+  // textShadow applied per-theme inside FreeCell
 };
 
 // ── Wall Cell ───────────────────────────────────────────────────
@@ -107,12 +107,16 @@ function FreeCell({ cx, cy, sensorData, viewMode, theme }) {
   let height = 0.04;
   let labelContent = null;
 
-  // Label panel styling adapts to theme
-  const panelBg    = isDark ? 'rgba(3,8,18,0.80)'  : 'rgba(255,255,255,0.92)';
+  // Label panel + text styling adapts to theme
+  const panelBg    = isDark ? 'rgba(3,8,18,0.80)'  : 'rgba(255,255,255,0.94)';
   const panelBdr   = isDark ? 'rgba(0,212,255,0.2)' : 'rgba(0,80,160,0.18)';
-  const panelShadow= isDark ? '0 0 10px rgba(0,212,255,0.15)' : '0 2px 12px rgba(0,0,0,0.12)';
-  const hdrColor   = isDark ? 'rgba(200,220,240,0.6)' : 'rgba(80,100,140,0.7)';
-  const unitColor  = isDark ? 'rgba(200,220,240,0.45)': 'rgba(80,100,140,0.5)';
+  const panelShadow= isDark ? '0 0 10px rgba(0,212,255,0.15)' : '0 2px 14px rgba(0,0,0,0.10)';
+  const hdrColor   = isDark ? 'rgba(200,220,240,0.6)' : '#6b7a94';
+  const unitColor  = isDark ? 'rgba(200,220,240,0.45)': '#8892a4';
+  // Label text: dark mode needs glow to pop on dark panel, light mode uses clean shadow
+  const lblShadow  = isDark
+    ? '0 0 8px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,0.7)'
+    : '0 1px 2px rgba(255,255,255,0.8)';
 
   if (sensorData) {
     const hasGas  = sensorData.avgGas  != null;
@@ -125,12 +129,12 @@ function FreeCell({ cx, cy, sensorData, viewMode, theme }) {
       emissiveIntensity = 0.15;
       height = 0.04 + (sensorData.avgGas / 600) * 0.3;
       labelContent = (
-        <div style={{ ...labelBase, textAlign: 'center' }}>
-          <div style={{ fontSize: 7, color: 'rgba(200,220,240,0.6)', letterSpacing: '0.12em' }}>GAS</div>
+        <div style={{ ...labelBase, textAlign: 'center', textShadow: lblShadow }}>
+          <div style={{ fontSize: 7, color: hdrColor, letterSpacing: '0.12em' }}>GAS</div>
           <div style={{ fontSize: 12, fontWeight: 800, color: gasColor(sensorData.avgGas) }}>
             {Math.round(sensorData.avgGas)}
           </div>
-          <div style={{ fontSize: 6, color: 'rgba(200,220,240,0.45)' }}>ppm</div>
+          <div style={{ fontSize: 6, color: unitColor }}>ppm</div>
         </div>
       );
     } else if (viewMode === 'temp' && hasTemp) {
@@ -139,8 +143,8 @@ function FreeCell({ cx, cy, sensorData, viewMode, theme }) {
       emissiveIntensity = 0.12;
       height = 0.04 + Math.max(0, (sensorData.avgTemp - 20) / 30) * 0.2;
       labelContent = (
-        <div style={{ ...labelBase, textAlign: 'center' }}>
-          <div style={{ fontSize: 7, color: 'rgba(200,220,240,0.6)', letterSpacing: '0.12em' }}>TEMP</div>
+        <div style={{ ...labelBase, textAlign: 'center', textShadow: lblShadow }}>
+          <div style={{ fontSize: 7, color: hdrColor, letterSpacing: '0.12em' }}>TEMP</div>
           <div style={{ fontSize: 12, fontWeight: 800, color: tempColor(sensorData.avgTemp) }}>
             {sensorData.avgTemp.toFixed(1)}°
           </div>
@@ -153,8 +157,8 @@ function FreeCell({ cx, cy, sensorData, viewMode, theme }) {
       emissiveIntensity = 0.1;
       height = 0.04 + h * 0.15;
       labelContent = (
-        <div style={{ ...labelBase, textAlign: 'center' }}>
-          <div style={{ fontSize: 7, color: 'rgba(200,220,240,0.6)', letterSpacing: '0.12em' }}>HUM</div>
+        <div style={{ ...labelBase, textAlign: 'center', textShadow: lblShadow }}>
+          <div style={{ fontSize: 7, color: hdrColor, letterSpacing: '0.12em' }}>HUM</div>
           <div style={{ fontSize: 12, fontWeight: 800, color: humColor(sensorData.avgHum) }}>
             {Math.round(sensorData.avgHum)}%
           </div>
@@ -166,7 +170,7 @@ function FreeCell({ cx, cy, sensorData, viewMode, theme }) {
       emissiveIntensity = 0.14;
       height = 0.04 + (hasGas ? (sensorData.avgGas / 800) * 0.2 : 0);
       labelContent = (
-        <div style={{ ...labelBase, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <div style={{ ...labelBase, textAlign: 'center', textShadow: lblShadow, display: 'flex', flexDirection: 'column', gap: 1 }}>
           {hasTemp && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 3, justifyContent: 'center' }}>
               <span style={{ fontSize: 8 }}>🌡</span>
@@ -435,15 +439,19 @@ function CameraRig({ target, follow }) {
   return null;
 }
 
-// ── 2D Minimap Canvas ─────────────────────────────────────────
-function Minimap2D({ occupancy, rover, size = 180 }) {
+// ── 2D Minimap Canvas ───────────────────────────────────────────────
+function Minimap2D({ occupancy, rover, size = 180, theme }) {
+  const isDark  = theme !== 'light';
   const canvasRef = useRef();
+  const bgColor   = isDark ? '#030810' : '#f0f3f8';
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#030810';
+    ctx.clearRect(0, 0, size, size);
+    // Background
+    ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, size, size);
 
     if (!occupancy || Object.keys(occupancy).length === 0) {
@@ -496,9 +504,10 @@ function Minimap2D({ occupancy, rover, size = 180 }) {
     <canvas ref={canvasRef} width={size} height={size}
       style={{
         position: 'absolute', bottom: 20, left: 20,
-        borderRadius: 8, border: '1px solid rgba(0,212,255,0.25)',
-        background: '#030810',
-        boxShadow: '0 0 16px rgba(0,212,255,0.2)',
+        borderRadius: 8,
+        border: isDark ? '1px solid rgba(0,212,255,0.25)' : '1px solid rgba(0,80,160,0.15)',
+        background: bgColor,
+        boxShadow: isDark ? '0 0 16px rgba(0,212,255,0.2)' : '0 2px 12px rgba(0,0,0,0.10)',
       }}
     />
   );
@@ -1030,7 +1039,7 @@ export default function Map3D() {
       </div>
 
       {/* ── 2D Minimap ── */}
-      <Minimap2D occupancy={occupancy} rover={rover} size={190} />
+      <Minimap2D occupancy={occupancy} rover={rover} size={190} theme={theme} />
 
       {/* ── Minimap label ── */}
       <div style={{
