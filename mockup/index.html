@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IoT Rover Mobile App Mockup</title>
+  <!-- Google Fonts for premium typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="app-layout-container">
+    
+    <!-- Left Side: Phone Mockup (Visualizing MIT App Inventor) -->
+    <div class="phone-wrapper">
+      <div class="phone-bezel">
+        <div class="phone-camera"></div>
+        <div class="phone-screen">
+          
+          <!-- Top Header Arrangement (VerticalArrangement) -->
+          <div class="header-arrangement">
+            <h1 class="app-title">ENVIRONMENTAL ROVER</h1>
+            <div id="connection-status" class="status-indicator online">
+              <span class="status-dot"></span> <span id="status-text">🟢 Online</span>
+            </div>
+          </div>
+
+          <!-- Sensor Dashboard (TableArrangement - 2 Columns, 3 Rows) -->
+          <div class="sensor-dashboard">
+            <div class="sensor-card">
+              <span class="sensor-icon">🌡️</span>
+              <span class="sensor-label">Temperature</span>
+              <span id="temp-value" class="sensor-value">--°C</span>
+            </div>
+            <div class="sensor-card">
+              <span class="sensor-icon">💧</span>
+              <span class="sensor-label">Humidity</span>
+              <span id="humidity-value" class="sensor-value">--%</span>
+            </div>
+            <div class="sensor-card full-width">
+              <div class="gas-header">
+                <span class="sensor-icon">💨</span>
+                <span class="sensor-label">Gas Level</span>
+                <span id="gas-value" class="sensor-value">-- ppm</span>
+              </div>
+              <div class="progress-bar-container">
+                <div id="gas-progress" class="progress-bar" style="width: 0%"></div>
+              </div>
+              <span id="gas-status" class="gas-status-label status-normal">Normal</span>
+            </div>
+          </div>
+
+          <!-- Control Pad (TableArrangement - 3 Columns, 3 Rows) -->
+          <div class="control-pad">
+            <div class="dpad-grid">
+              <div></div> <!-- Top Left Empty -->
+              <button id="btn-forward" class="control-btn forward-btn" data-cmd="forward">
+                <span class="arrow">▲</span>
+                <span class="btn-text">FORWARD</span>
+              </button>
+              <div></div> <!-- Top Right Empty -->
+              
+              <button id="btn-left" class="control-btn left-btn" data-cmd="left">
+                <span class="arrow">◀</span>
+                <span class="btn-text">LEFT</span>
+              </button>
+              <button id="btn-stop" class="control-btn stop-btn" data-cmd="stop">
+                <span class="btn-text">STOP</span>
+              </button>
+              <button id="btn-right" class="control-btn right-btn" data-cmd="right">
+                <span class="arrow">▶</span>
+                <span class="btn-text">RIGHT</span>
+              </button>
+              
+              <div></div> <!-- Bottom Left Empty -->
+              <button id="btn-backward" class="control-btn backward-btn" data-cmd="backward">
+                <span class="arrow">▼</span>
+                <span class="btn-text">BACKWARD</span>
+              </button>
+              <div></div> <!-- Bottom Right Empty -->
+            </div>
+          </div>
+
+          <!-- Bottom Controls (HorizontalArrangement) -->
+          <div class="bottom-controls">
+            <button id="btn-led" class="action-btn led-btn-off">
+              <span class="btn-icon">💡</span>
+              <span class="action-text">LED: OFF</span>
+            </button>
+            <button id="btn-auto" class="action-btn auto-btn-off">
+              <span class="btn-icon">🔄</span>
+              <span class="action-text">Auto Mode: Off</span>
+            </button>
+          </div>
+
+          <!-- Vibration overlay animation -->
+          <div id="vibration-overlay" class="vibration-overlay"></div>
+          
+        </div>
+        <div class="phone-home-bar"></div>
+      </div>
+    </div>
+
+    <!-- Right Side: Simulator Panel (Simulates Chirag's Hardware and backend) -->
+    <div class="simulator-panel">
+      <h2>🎛️ Rover Hardware Simulator</h2>
+      <p class="sim-desc">Since we are designing the MIT App Inventor interface, you can use these controls to simulate sensor updates and see how the app reacts, or connect to the actual backend!</p>
+
+      <div class="sim-card">
+        <h3>1. Connection Method</h3>
+        <div class="toggle-group">
+          <button id="mode-sim" class="toggle-choice active">Simulated Mode (No Server)</button>
+          <button id="mode-server" class="toggle-choice">Connected Mode (Express Server)</button>
+        </div>
+        <div id="server-url-container" class="url-input-group hidden">
+          <label for="server-url">Express Server URL:</label>
+          <input type="text" id="server-url" value="http://localhost:3000" placeholder="e.g. http://192.168.1.5:3000">
+          <span class="help-text">Point this to your running Node.js server to test real API routes.</span>
+        </div>
+      </div>
+
+      <div class="sim-card" id="sim-sliders">
+        <h3>2. Adjust Sensor Data</h3>
+        
+        <div class="slider-group">
+          <div class="slider-header">
+            <span>🌡️ Temperature</span>
+            <span id="sim-temp-lbl">24 °C</span>
+          </div>
+          <input type="range" id="slider-temp" min="0" max="60" value="24">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-header">
+            <span>💧 Humidity</span>
+            <span id="sim-humidity-lbl">55 %</span>
+          </div>
+          <input type="range" id="slider-humidity" min="10" max="95" value="55">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-header">
+            <span>💨 Gas Level (MQ-2)</span>
+            <span id="sim-gas-lbl">120 ppm</span>
+          </div>
+          <input type="range" id="slider-gas" min="0" max="800" value="120">
+          <span class="help-text">Drag above 300 to trigger the <b>Danger Notification</b>, <b>Vibration</b>, and <b>Voice Alert</b>!</span>
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-header">
+            <span>📡 Rover Connection Status</span>
+          </div>
+          <div class="checkbox-container">
+            <input type="checkbox" id="check-online" checked>
+            <label for="check-online">Simulate Rover Active</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="sim-card">
+        <h3>3. Active Debug Monitor</h3>
+        <div class="debug-monitor">
+          <div><strong>Active Direction Command:</strong> <span id="debug-command" class="badge">STOP</span></div>
+          <div><strong>LED Pin State (D4):</strong> <span id="debug-led" class="badge text-gray">LOW (OFF)</span></div>
+          <div><strong>Auto Mode:</strong> <span id="debug-auto" class="badge text-gray">DISABLED</span></div>
+          <div class="terminal-log">
+            <div class="log-title">API Traffic Log:</div>
+            <div id="log-content" class="log-content">System initialized. Ready to test.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
