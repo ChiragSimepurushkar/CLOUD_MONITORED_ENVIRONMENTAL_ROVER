@@ -48,6 +48,9 @@ let Alert         = null;
 let GridReading   = null;
 let sessionId     = `session_${Date.now()}`;
 
+// Hold the latest command from the phone app
+let currentCommand = "stop";
+
 mongoose.connect(MONGO_URI)
   .then(() => {
     console.log('[MongoDB] ✅ Connected');
@@ -116,6 +119,35 @@ async function checkAlert(data, x, y) {
 //  ROUTES
 // ══════════════════════════════════════════════
 
+// ---------------------------------------------------------
+// ROUTE 1: App GETS the latest sensor data
+// Phone calls: GET http://<LAPTOP_IP>:3000/data
+// ---------------------------------------------------------
+app.get('/data', (req, res) => {
+  const latest = chartBuffer.length > 0 ? chartBuffer[chartBuffer.length - 1] : { temperature: 0, humidity: 0, gas: 0, distance: 0 };
+  res.json({
+    temp: latest.temperature,
+    humidity: latest.humidity,
+    gas: latest.gas,
+    distance: latest.distance
+  });
+});
+
+// ---------------------------------------------------------
+// ROUTE 2: App SENDS a movement command
+// Phone calls: GET http://<LAPTOP_IP>:3000/control?cmd=forward
+// ---------------------------------------------------------
+app.get('/control', (req, res) => {
+  const cmd = req.query.cmd;
+  if (cmd) {
+    currentCommand = cmd;
+    console.log(`📱 App sent command: ${currentCommand}`);
+    res.send(`Command ${currentCommand} received`);
+  } else {
+    res.status(400).send("No command provided");
+  }
+});
+
 // ── POST /rover-data  (Arduino — supports old and new firmware)
 app.post('/rover-data', (req, res) => {
   try {
@@ -150,8 +182,10 @@ app.post('/rover-data', (req, res) => {
     checkAlert(d, d.x, d.y).catch(() => {});
     if (GridReading) GridReading.create({ ...d, sessionId }).catch(() => {});
 
-    // 5. Try to respond to Arduino — may fail if TCP already closed
-    try { res.json({ status: 'ok', packetId: entry.id }); } catch(_) {}
+    // 5. Reply to the Arduino with the current command from the phone!
+    try { 
+      res.send(currentCommand); 
+    } catch(_) {}
 
   } catch(err) {
     console.error('[/rover-data] Error:', err.message);
