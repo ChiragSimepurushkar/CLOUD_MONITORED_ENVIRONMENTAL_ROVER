@@ -1,333 +1,194 @@
-// ══════════════════════════════════════════════════════════════
-//  COMBINED SERVER  v4.0  — Room Scanning Edition
-//  Cloud-Monitored Environmental Rover  +  Real Occupancy Grid
-//  ─ Bresenham ray-tracing via gridMap.js
-//  ─ Backward-compatible: works with old AND new Arduino firmware
-//  ─ /rover-data with scan[] → occupancy grid
-//  ─ /rover-data without scan[] → legacy simple grid
-// ══════════════════════════════════════════════════════════════
-
-const express    = require('express');
-const http       = require('http');
-const { Server } = require('socket.io');
-const cors       = require('cors');
-const mongoose   = require('mongoose');
-const { networkInterfaces } = require('os');
-const gridEngine = require('./gridMap');
-
+const express = require('express');
+const cors = require('cors');
 require('dotenv').config();
 
-const app    = express();
-const server = http.createServer(app);
-const io     = new Server(server, { cors: { origin: '*' } });
+const app = express();
+const PORT = process.env.PORT || 3000;
 
+// Enable CORS so the React frontend and local mockup can access the server
 app.use(cors());
-app.use(express.json({ limit: '512kb' }));  // scan[] payloads can be large
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// --- ADD THIS NEW ERROR CATCHER ---
-app.use((err, req, res, next) => {
-  if (err.type === 'request.aborted') {
-    console.log("⚠️ [Network] ESP8266 closed connection early. Ignoring packet.");
-    return res.status(400).send('Request aborted');
-  }
-  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
-    console.log("⚠️ [Network] Malformed JSON received. Ignoring packet.");
-    return res.status(400).send('Bad JSON');
-  }
-  next(err); // pass other errors down
-});
-// ----------------------------------
+// In-Memory Database (State storage)
+let state = {
+  // Sensor readings
+  temp: 24,
+  humidity: 55,
+  gas: 120,
+  
+  // Controls
+  currentCommand: 'stop',
+  ledStatus: 'off',
+  autoMode: false,
+  
+  // Timing to determine online status
+  lastRoverUpdate: 0
+};
 
-// ─────────────────────────────────────────────
-//  MongoDB — dual schema
-// ─────────────────────────────────────────────
-const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/rover-combined';
+// Threshold for rover being considered offline (e.g., no updates for 10 seconds)
+const OFFLINE_THRESHOLD_MS = 10000;
 
-let SensorReading = null;
-let Alert         = null;
-let GridReading   = null;
-let sessionId     = `session_${Date.now()}`;
-
-mongoose.connect(MONGO_URI)
-  .then(() => {
-    console.log('[MongoDB] ✅ Connected');
-
-    const sensorSchema = new mongoose.Schema({
-      temperature: Number, humidity: Number, gas: Number,
-      createdAt: { type: Date, default: Date.now }
-    });
-    SensorReading = mongoose.model('SensorReading', sensorSchema);
-
-    const alertSchema = new mongoose.Schema({
-      type: String, message: String,
-      createdAt: { type: Date, default: Date.now }
-    });
-    Alert = mongoose.model('Alert', alertSchema);
-
-    // Extended schema — stores scan arrays for replay
-    const gridSchema = new mongoose.Schema({
-      x: Number, y: Number, heading: Number,
-      temp: Number, humidity: Number, gas: Number,
-      obstacle: Boolean, distance: Number,
-      scan: [{ a: Number, d: Number }],
-      sessionId: String,
-      createdAt: { type: Date, default: Date.now }
-    });
-    GridReading = mongoose.model('GridReading', gridSchema);
-  })
-  .catch(err => console.warn('[MongoDB] ⚠️  Not available —', err.message));
-
-// ─────────────────────────────────────────────
-//  In-memory packet log + chart buffer
-// ─────────────────────────────────────────────
-const packetLog   = [];
-const chartBuffer = [];
-let   packetCount = 0;
-
-function logPacket(data, source) {
-  const entry = { id: ++packetCount, source, ts: new Date().toISOString(), data };
-  packetLog.unshift(entry);
-  if (packetLog.length > 50) packetLog.pop();
-
-  const point = {
-    time:        new Date().toLocaleTimeString(),
-    temperature: data.temp        ?? data.temperature ?? 0,
-    humidity:    data.hum         ?? data.humidity    ?? 0,
-    gas:         data.gas         ?? 0,
-    distance:    data.distance    ?? 0,
-  };
-  chartBuffer.push(point);
-  if (chartBuffer.length > 60) chartBuffer.shift();
-  return entry;
+// Helper function to check if the rover is online
+function isRoverOnline() {
+  if (state.lastRoverUpdate === 0) return false;
+  return (Date.now() - state.lastRoverUpdate) < OFFLINE_THRESHOLD_MS;
 }
 
-// ── Check and emit alert ──────────────────────────────────────
-async function checkAlert(data, x, y) {
-  const gas = data.gas ?? 0;
-  const payload = gas > 400 ? { type: 'DANGER', message: `Gas ${gas} ppm at (${Math.round(x)},${Math.round(y)}) cm` }
-                : gas > 250 ? { type: 'WARNING', message: `Elevated gas ${gas} ppm at (${Math.round(x)},${Math.round(y)}) cm` }
-                : null;
-  if (payload && Alert) {
-    try { const a = await Alert.create(payload); io.emit('newAlert', a); } catch(_) {}
-  }
+// Helper function to determine gas safety status
+function getGasStatus(gasValue) {
+  if (gasValue > 300) return 'Danger';
+  if (gasValue > 200) return 'Warning';
+  return 'Normal';
 }
 
-// ══════════════════════════════════════════════
-//  ROUTES
-// ══════════════════════════════════════════════
+// --- API Endpoints ---
 
-// ── POST /rover-data  (Arduino — supports old and new firmware)
-app.post('/rover-data', (req, res) => {
-  try {
-    const d = req.body;
-    if (!d || d.x === undefined) {
-      return res.status(400).end();
-    }
-
-    // 1. Process synchronously — no await, no yielding the event loop
-    const mapData  = gridEngine.processPacket(d);
-    const entry    = logPacket(d, Array.isArray(d.scan) ? 'arduino-scan' : 'arduino-legacy');
-    const scanCount = Array.isArray(d.scan) ? d.scan.length : 0;
-
-    console.log(`[#${entry.id}][${entry.source}] X=${d.x.toFixed(0)} Y=${d.y.toFixed(0)} Hdg=${d.heading}° T=${d.temp ?? d.temperature ?? '?'}°C H=${d.hum ?? d.humidity ?? '?'}% G=${d.gas}ppm Rays=${scanCount}`);
-
-    // 2. DEEP CLONE all data before emitting — avoids mutable reference issues
-    //    socket.io can silently fail if objects contain shared/mutable references
-    const safeEntry   = JSON.parse(JSON.stringify(entry));
-    const safeMap     = JSON.parse(JSON.stringify({
-      ...mapData,
-      lastScan: Array.isArray(d.scan) ? d.scan : null
-    }));
-    const safeChart   = JSON.parse(JSON.stringify(chartBuffer.slice(-1)[0] || {}));
-
-    // 3. BROADCAST immediately — before any async operations
-    io.emit('raw-data',     safeEntry);
-    io.emit('map-update',   safeMap);
-    io.emit('chart-update', safeChart);
-    console.log(`  → broadcast to ${io.engine.clientsCount} browser(s)`);
-
-    // 4. Fire-and-forget async stuff (alerts, DB) — don't block the response
-    checkAlert(d, d.x, d.y).catch(() => {});
-    if (GridReading) GridReading.create({ ...d, sessionId }).catch(() => {});
-
-    // 5. Try to respond to Arduino — may fail if TCP already closed
-    try { res.json({ status: 'ok', packetId: entry.id }); } catch(_) {}
-
-  } catch(err) {
-    console.error('[/rover-data] Error:', err.message);
-    try { res.status(500).end(); } catch(_) {}
-  }
+// 1. Welcome and debug landing page
+app.get('/', (req, res) => {
+  res.send(`
+    <html>
+      <head>
+        <title>IoT Rover Server</title>
+        <style>
+          body { font-family: sans-serif; background: #121212; color: #e0e0e0; padding: 40px; text-align: center; }
+          .container { max-width: 600px; margin: 0 auto; background: #1e1e1e; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+          h1 { color: #4caf50; margin-bottom: 20px; }
+          .status { font-size: 1.2rem; margin: 15px 0; }
+          .online { color: #4caf50; font-weight: bold; }
+          .offline { color: #f44336; font-weight: bold; }
+          .routes { text-align: left; background: #2b2b2b; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 0.9rem; }
+          a { color: #2196f3; text-decoration: none; }
+          a:hover { text-decoration: underline; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>🤖 IoT Rover Server</h1>
+          <p>The server is running successfully!</p>
+          <div class="status">
+            Rover Connection: <span class="${isRoverOnline() ? 'online' : 'offline'}">${isRoverOnline() ? '🟢 ONLINE' : '🔴 OFFLINE'}</span>
+          </div>
+          <p><strong>Current Command:</strong> <span style="color: #ff9800; font-weight:bold;">${state.currentCommand.toUpperCase()}</span></p>
+          <p><strong>LED:</strong> ${state.ledStatus.toUpperCase()} | <strong>Auto Mode:</strong> ${state.autoMode ? 'ON' : 'OFF'}</p>
+          <div class="routes">
+            <strong>Endpoints:</strong><br>
+            - <a href="/data">GET /data</a> - Get full JSON state<br>
+            - <a href="/control?cmd=forward">GET /control?cmd=[command]</a> - Control rover<br>
+            - <a href="/rover/command/raw">GET /rover/command/raw</a> - Raw command string (Arduino)<br>
+            - <a href="/rover/led/raw">GET /rover/led/raw</a> - Raw LED status (Arduino)<br>
+          </div>
+        </div>
+      </body>
+    </html>
+  `);
 });
 
-// ── POST /sensor-data  (legacy endpoint — keeps dashboard-code working)
-app.post('/sensor-data', async (req, res) => {
-  const { temperature, humidity, gas } = req.body;
-  const data = { temp: temperature, temperature, humidity, hum: humidity, gas, x: 0, y: 0, heading: 0, distance: 0, obstacle: false };
-  const entry = logPacket(data, 'legacy');
-  if (SensorReading) await SensorReading.create({ temperature, humidity, gas }).catch(() => {});
-  if (gas > 400 && Alert) {
-    const a = await Alert.create({ type: 'DANGER', message: `Gas level reached ${gas}` }).catch(() => null);
-    if (a) io.emit('newAlert', a);
-  }
-  io.emit('sensorUpdate', { temperature, humidity, gas, createdAt: new Date() });
-  io.emit('chart-update', chartBuffer.slice(-1)[0]);
-  res.json({ message: 'Sensor data stored' });
-});
-
-// ── POST /simulate  (HTTP fallback — browser can also use socket 'client-simulate')
-app.post('/simulate', (req, res) => {
-  try {
-    const d = buildSimPacket(req.body);
-    const mapData = gridEngine.processPacket(d);
-    const entry   = logPacket(d, 'simulate');
-    io.emit('raw-data',   entry);
-    io.emit('map-update', { ...mapData, lastScan: d.scan || null });
-    io.emit('chart-update', chartBuffer.slice(-1)[0]);
-    console.log(`[SIM HTTP #${entry.id}] X=${d.x} Y=${d.y}`);
-    res.json({ status: 'simulated', packetId: entry.id, mapCells: mapData.cellCount });
-  } catch(err) {
-    console.error('[/simulate] Error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── GET /map-state  (full occupancy grid for initial page load)
-app.get('/map-state', (req, res) => res.json(gridEngine.getState()));
-
-// ── GET /chart-data  (live chart buffer)
-app.get('/chart-data', (req, res) => res.json(chartBuffer));
-
-// ── GET /replay  (scan history for replay mode)
-app.get('/replay', (req, res) => res.json(gridEngine.getScanHistory()));
-
-// ── GET /sensor-data  (legacy MongoDB query)
-app.get('/sensor-data', async (req, res) => {
-  if (SensorReading) {
-    const data = await SensorReading.find().sort({ createdAt: -1 }).limit(60).lean().catch(() => []);
-    return res.json(data);
-  }
-  res.json([]);
-});
-
-// ── GET /alerts
-app.get('/alerts', async (req, res) => {
-  if (Alert) {
-    const alerts = await Alert.find().sort({ createdAt: -1 }).limit(50).lean().catch(() => []);
-    return res.json(alerts);
-  }
-  res.json([]);
-});
-
-// ── GET /packets
-app.get('/packets', (req, res) => res.json({ count: packetCount, packets: packetLog }));
-
-// ── POST /reset  (clear everything including occupancy grid)
-app.post('/reset', (req, res) => {
-  gridEngine.reset();
-  packetLog.length = 0;
-  chartBuffer.length = 0;
-  packetCount = 0;
-  sessionId = `session_${Date.now()}`;
-  io.emit('map-reset');
-  res.json({ status: 'reset', sessionId });
-});
-
-// ── GET /health
-app.get('/health', (req, res) => {
-  const state = gridEngine.getState();
+// 2. GET /data: Returns the entire current state (for app, website, and dashboard)
+app.get('/data', (req, res) => {
   res.json({
-    status: 'ok', packetCount, sessionId,
-    cells: state.cellCount, coverage: state.coverage,
-    wallCells: state.stats.wallCells, freeCells: state.stats.freeCells,
-    dbOnline: SensorReading !== null,
-    uptime: process.uptime().toFixed(1) + 's'
+    temp: state.temp,
+    humidity: state.humidity,
+    gas: state.gas,
+    gasStatus: getGasStatus(state.gas),
+    currentCommand: state.currentCommand,
+    ledStatus: state.ledStatus,
+    autoMode: state.autoMode,
+    isOnline: isRoverOnline(),
+    lastUpdated: state.lastRoverUpdate
   });
 });
 
-// ─────────────────────────────────────────────
-//  SOCKET.IO
-// ─────────────────────────────────────────────
+// 3. POST /data: Receives sensor data from the Arduino Rover
+// Supports JSON: { temp: 34, humidity: 60, gas: 320 } or urlencoded payload
+app.post('/data', (req, res) => {
+  const { temp, humidity, gas } = req.body;
+  
+  if (temp !== undefined) state.temp = parseFloat(temp);
+  if (humidity !== undefined) state.humidity = parseFloat(humidity);
+  if (gas !== undefined) state.gas = parseInt(gas);
+  
+  state.lastRoverUpdate = Date.now();
+  
+  // Respond with the current controls so the rover can update its movement and LED in the same request
+  res.json({
+    success: true,
+    command: state.currentCommand,
+    ledStatus: state.ledStatus,
+    autoMode: state.autoMode
+  });
+});
 
-// Shared helper — builds a simulate packet from partial data
-function buildSimPacket(override = {}) {
-  return {
-    x: 50, y: 50, heading: 0,
-    temp: 28, hum: 62, gas: 210,
-    obstacle: false, distance: 120,
-    scan: [
-      {a:0,d:120},{a:15,d:130},{a:30,d:145},{a:45,d:160},
-      {a:60,d:175},{a:75,d:180},{a:90,d:120},{a:105,d:130},
-      {a:120,d:150},{a:135,d:140},{a:150,d:125},{a:165,d:115},{a:180,d:100}
-    ],
-    ...override
-  };
-}
-
-io.on('connection', socket => {
-  console.log('[Socket] Browser connected:', socket.id);
-
-  // Send current state immediately on connect
-  const state = gridEngine.getState();
-  // Deep clone to avoid mutable reference issues with socket.io serialization
-  socket.emit('map-update',  JSON.parse(JSON.stringify({ ...state, lastScan: null })));
-  socket.emit('chart-init',  JSON.parse(JSON.stringify(chartBuffer)));
-
-  // ── SIMULATE via socket (avoids HTTP connection pool issues) ──
-  socket.on('client-simulate', (data) => {
-    try {
-      const d       = buildSimPacket(data || {});
-      const mapData = gridEngine.processPacket(d);
-      const entry   = logPacket(d, 'simulate');
-      // Deep clone before emitting
-      io.emit('raw-data',     JSON.parse(JSON.stringify(entry)));
-      io.emit('map-update',   JSON.parse(JSON.stringify({ ...mapData, lastScan: d.scan })));
-      io.emit('chart-update', JSON.parse(JSON.stringify(chartBuffer.slice(-1)[0] || {})));
-      console.log(`[SIM WS #${entry.id}] X=${d.x} Y=${d.y} Hdg=${d.heading} → ${io.engine.clientsCount} browser(s)`);
-    } catch(err) {
-      console.error('[client-simulate] Error:', err.message);
-      socket.emit('sim-error', { error: err.message });
+// 4. GET /control: Updates rover command from App or Website
+// Usage: /control?cmd=forward (values: forward, backward, left, right, stop)
+app.get('/control', (req, res) => {
+  const { cmd } = req.query;
+  
+  if (cmd) {
+    const validCommands = ['forward', 'backward', 'left', 'right', 'stop'];
+    if (validCommands.includes(cmd.toLowerCase())) {
+      state.currentCommand = cmd.toLowerCase();
+      return res.json({ success: true, currentCommand: state.currentCommand });
+    } else {
+      return res.status(400).json({ success: false, error: 'Invalid command. Use forward, backward, left, right, or stop.' });
     }
-  });
-
-  // ── RESET via socket ──────────────────────────────────────────
-  socket.on('client-reset', () => {
-    gridEngine.reset();
-    io.emit('map-reset');
-    console.log('[Socket] Map reset by browser');
-  });
-
-  socket.on('disconnect', () => console.log('[Socket] Disconnected:', socket.id));
+  }
+  
+  res.json({ currentCommand: state.currentCommand });
 });
 
+// 5. GET/POST /led: Control LED state
+// Usage: GET /led?state=on or POST /led with { state: "on" }
+app.all('/led', (req, res) => {
+  const inputState = req.query.state || req.body.state;
+  
+  if (inputState) {
+    const cleanState = inputState.toLowerCase();
+    if (cleanState === 'on' || cleanState === 'off') {
+      state.ledStatus = cleanState;
+      return res.json({ success: true, ledStatus: state.ledStatus });
+    } else {
+      return res.status(400).json({ success: false, error: 'Invalid LED state. Use "on" or "off".' });
+    }
+  }
+  
+  res.json({ ledStatus: state.ledStatus });
+});
 
-// ─────────────────────────────────────────────
-//  START
-// ─────────────────────────────────────────────
-function getLocalIP() {
-  const nets = networkInterfaces();
-  for (const name of Object.keys(nets))
-    for (const net of nets[name])
-      if (net.family === 'IPv4' && !net.internal) return net.address;
-  return '127.0.0.1';
-}
+// 6. GET/POST /auto: Toggle Auto Mode
+app.all('/auto', (req, res) => {
+  const toggle = req.query.toggle || req.body.toggle;
+  
+  if (toggle !== undefined) {
+    // Parse boolean (supporting string "true" or actual boolean)
+    state.autoMode = toggle === 'true' || toggle === true;
+    return res.json({ success: true, autoMode: state.autoMode });
+  } else {
+    // If no toggle param, just flip it
+    state.autoMode = !state.autoMode;
+    return res.json({ success: true, autoMode: state.autoMode });
+  }
+});
 
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  const ip = getLocalIP();
-  console.log(`
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  🛰  ROVER ROOM SCANNER SERVER  v4.0
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Local:   http://localhost:${PORT}
-  Network: http://${ip}:${PORT}  ← SET THIS IN ARDUINO
+// 7. Arduino Hardware Friendly RAW Endpoints
+// Arduino clients are memory-constrained. Raw text is much easier for Arduino to parse than JSON.
 
-  POST /rover-data    ← Arduino (scan[] or legacy)
-  POST /simulate      ← Browser test with fake 13-ray scan
-  GET  /map-state     ← Full occupancy grid
-  GET  /chart-data    ← Live sensor chart buffer
-  GET  /replay        ← Scan history for replay
-  GET  /alerts        ← Alert history
-  GET  /health        ← Server status + coverage %
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`);
+// GET /rover/command/raw -> returns plain text: 'forward', 'stop', etc.
+app.get('/rover/command/raw', (req, res) => {
+  res.setHeader('Content-Type', 'text/plain');
+  res.send(state.currentCommand);
+});
+
+// GET /rover/led/raw -> returns plain text: 'on' or 'off'
+app.get('/rover/led/raw', (req, res) => {
+  res.setHeader('Content-Type', 'text/plain');
+  res.send(state.ledStatus);
+});
+
+// Start the server
+app.listen(PORT, () => {
+  console.log(`===================================================`);
+  console.log(`🚀 IoT Rover Express Server running on port ${PORT}`);
+  console.log(`📡 Local network URL: http://localhost:${PORT}`);
+  console.log(`===================================================`);
 });
