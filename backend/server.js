@@ -6,7 +6,7 @@
 //  ─ /rover-data with scan[] → occupancy grid
 //  ─ /rover-data without scan[] → legacy simple grid
 //  ─ MIT App Inventor: /control /auto /led /data endpoints
-//  ─ Error handler AFTER routes (Express requirement)
+//  ─ /rover-data uses raw body reader — no more "aborted" errors
 // ══════════════════════════════════════════════════════════════
 
 const express    = require('express');
@@ -24,7 +24,6 @@ const server = http.createServer(app);
 const io     = new Server(server, { cors: { origin: '*' } });
 
 app.use(cors());
-app.use(express.json({ limit: '512kb' }));  // scan[] payloads can be large
 
 // ─────────────────────────────────────────────
 //  MongoDB — dual schema
@@ -105,11 +104,83 @@ async function checkAlert(data, x, y) {
   }
 }
 
+// ══════════════════════════════════════════════════════════════
+//  CUSTOM RAW BODY READER FOR /rover-data
+//
+//  express.json() throws "request.aborted" when the ESP8266
+//  closes the TCP connection before the HTTP body is fully
+//  received on the server side.
+//
+//  The fix: define /rover-data BEFORE app.use(express.json())
+//  with its own body reader that tolerates early close.
+//  express.json() will NEVER run for this route.
+// ══════════════════════════════════════════════════════════════
+
+function readRoverBody(req, res, next) {
+  let raw  = '';
+  let done = false;
+
+  req.setEncoding('utf8');
+
+  req.on('data', chunk => { if (!done) raw += chunk; });
+
+  req.on('end', () => {
+    if (done) return;
+    done = true;
+    try   { req.body = JSON.parse(raw); }
+    catch { req.body = null; }
+    next();
+  });
+
+  // ESP8266 closed before full body arrived — discard silently, no log spam
+  req.on('aborted', () => { done = true; });
+  req.on('error',   () => { done = true; });
+}
+
+// ── POST /rover-data — MUST be before app.use(express.json())
+app.post('/rover-data', readRoverBody, (req, res) => {
+  const d = req.body;
+  if (!d || d.x === undefined) {
+    return res.status(400).end();
+  }
+
+  try {
+    const mapData   = gridEngine.processPacket(d);
+    const entry     = logPacket(d, Array.isArray(d.scan) ? 'arduino-scan' : 'arduino-legacy');
+    const scanCount = Array.isArray(d.scan) ? d.scan.length : 0;
+
+    console.log(`[#${entry.id}][${entry.source}] X=${d.x.toFixed(0)} Y=${d.y.toFixed(0)} Hdg=${d.heading}° T=${d.temp ?? d.temperature ?? '?'}°C H=${d.hum ?? d.humidity ?? '?'}% G=${d.gas}ppm Rays=${scanCount}`);
+
+    const safeEntry = JSON.parse(JSON.stringify(entry));
+    const safeMap   = JSON.parse(JSON.stringify({ ...mapData, lastScan: Array.isArray(d.scan) ? d.scan : null }));
+    const safeChart = JSON.parse(JSON.stringify(chartBuffer.slice(-1)[0] || {}));
+
+    io.emit('raw-data',     safeEntry);
+    io.emit('map-update',   safeMap);
+    io.emit('chart-update', safeChart);
+    console.log(`  → broadcast to ${io.engine.clientsCount} browser(s)`);
+
+    checkAlert(d, d.x, d.y).catch(() => {});
+    if (GridReading) GridReading.create({ ...d, sessionId }).catch(() => {});
+
+    // Reply includes cmd so Arduino gets poll + upload in ONE round trip
+    res.json({ ok: true, cmd: autoMode ? 'auto' : currentCommand });
+
+  } catch(err) {
+    console.error('[/rover-data] Error:', err.message);
+    try { res.status(500).end(); } catch(_) {}
+  }
+});
+
+// ── Global JSON middleware for all other routes ──────────────
+// Defined AFTER /rover-data so it never runs for that route
+app.use(express.json({ limit: '512kb' }));
+
 // ══════════════════════════════════════════════
 //  ROUTES
 // ══════════════════════════════════════════════
 
-// ── GET /data — MIT App polls this every 2s for sensor readings
+// ── GET /data — MIT App polls every 2s for sensor readings
 app.get('/data', (req, res) => {
   const latest = chartBuffer.length > 0 ? chartBuffer[chartBuffer.length - 1] : { temperature: 0, humidity: 0, gas: 0, distance: 0 };
   res.json({
@@ -124,12 +195,11 @@ app.get('/data', (req, res) => {
 });
 
 // ── GET /control — MIT App sends movement commands
-// Usage: /control?cmd=forward  (forward|backward|left|right|stop)
 app.get('/control', (req, res) => {
   const cmd = req.query.cmd;
   if (cmd) {
     currentCommand = cmd;
-    autoMode       = false;   // ← switching to manual the moment app sends a command
+    autoMode       = false;
     console.log(`📱 App command: ${currentCommand} → Manual Mode ON`);
     res.send(`Command ${currentCommand} received`);
   } else {
@@ -138,22 +208,19 @@ app.get('/control', (req, res) => {
 });
 
 // ── GET /auto — Toggle autonomous / manual mode
-// App calls: /auto?toggle=true  → autonomous ON
-//            /auto?toggle=false → manual (app takes control)
 app.get('/auto', (req, res) => {
   const toggle = req.query.toggle;
   if (toggle !== undefined) {
     autoMode = (toggle === 'true');
   } else {
-    autoMode = !autoMode;   // flip if no param
+    autoMode = !autoMode;
   }
-  if (autoMode) currentCommand = 'stop';  // clear manual cmd when going auto
+  if (autoMode) currentCommand = 'stop';
   console.log(`🤖 Auto Mode: ${autoMode ? 'ON  (rover drives itself)' : 'OFF (app in control)'}`);
   res.json({ success: true, autoMode });
 });
 
-// ── GET /led — LED control
-// App calls: /led?state=on  or  /led?state=off
+// ── GET /led — LED on/off
 app.get('/led', (req, res) => {
   const st = (req.query.state || '').toLowerCase();
   if (st === 'on' || st === 'off') {
@@ -165,55 +232,10 @@ app.get('/led', (req, res) => {
   }
 });
 
-// ── GET /rover/command/raw — Arduino plain-text fallback poll
-// Returns "auto" when rover should drive itself,
-// or "forward" / "backward" / "left" / "right" / "stop"
+// ── GET /rover/command/raw — plain-text fallback for Arduino
 app.get('/rover/command/raw', (req, res) => {
   res.setHeader('Content-Type', 'text/plain');
   res.send(autoMode ? 'auto' : currentCommand);
-});
-
-// ── POST /rover-data — Arduino sends sensor + scan data
-// Key fix: body-parse errors are handled inline, valid packets
-// never reach the error handler below.
-// Reply includes cmd so Arduino gets poll + upload in ONE round trip.
-app.post('/rover-data', (req, res) => {
-  // Guard: body must exist and have x ────────────────────────
-  const d = req.body;
-  if (!d || d.x === undefined) {
-    console.log('⚠️ [rover-data] Empty or missing x — ignored');
-    return res.status(400).end();
-  }
-
-  try {
-    const mapData   = gridEngine.processPacket(d);
-    const entry     = logPacket(d, Array.isArray(d.scan) ? 'arduino-scan' : 'arduino-legacy');
-    const scanCount = Array.isArray(d.scan) ? d.scan.length : 0;
-
-    console.log(`[#${entry.id}][${entry.source}] X=${d.x.toFixed(0)} Y=${d.y.toFixed(0)} Hdg=${d.heading}° T=${d.temp ?? d.temperature ?? '?'}°C H=${d.hum ?? d.humidity ?? '?'}% G=${d.gas}ppm Rays=${scanCount}`);
-
-    // Deep clone before emitting — avoids mutable reference issues
-    const safeEntry = JSON.parse(JSON.stringify(entry));
-    const safeMap   = JSON.parse(JSON.stringify({ ...mapData, lastScan: Array.isArray(d.scan) ? d.scan : null }));
-    const safeChart = JSON.parse(JSON.stringify(chartBuffer.slice(-1)[0] || {}));
-
-    io.emit('raw-data',     safeEntry);
-    io.emit('map-update',   safeMap);
-    io.emit('chart-update', safeChart);
-    console.log(`  → broadcast to ${io.engine.clientsCount} browser(s)`);
-
-    // Fire-and-forget async (alerts, DB) — don't block the response
-    checkAlert(d, d.x, d.y).catch(() => {});
-    if (GridReading) GridReading.create({ ...d, sessionId }).catch(() => {});
-
-    // Reply includes cmd so Arduino gets poll + upload in one round trip.
-    // "auto" = rover drives itself | "forward" etc. = manual command from app
-    res.json({ ok: true, cmd: autoMode ? 'auto' : currentCommand });
-
-  } catch(err) {
-    console.error('[/rover-data] Error:', err.message);
-    try { res.status(500).end(); } catch(_) {}
-  }
 });
 
 // ── POST /sensor-data  (legacy endpoint)
@@ -231,7 +253,7 @@ app.post('/sensor-data', async (req, res) => {
   res.json({ message: 'Sensor data stored' });
 });
 
-// ── POST /simulate  (browser test — fake 13-ray scan)
+// ── POST /simulate  (browser test)
 app.post('/simulate', (req, res) => {
   try {
     const d       = buildSimPacket(req.body);
@@ -287,6 +309,7 @@ app.get('/health', (req, res) => {
     cells: state.cellCount, coverage: state.coverage,
     wallCells: state.stats.wallCells, freeCells: state.stats.freeCells,
     dbOnline: SensorReading !== null,
+    autoMode, currentCommand, ledState,
     uptime: process.uptime().toFixed(1) + 's'
   });
 });
@@ -312,7 +335,6 @@ function buildSimPacket(override = {}) {
 io.on('connection', socket => {
   console.log('[Socket] Browser connected:', socket.id);
 
-  // Send current state immediately on connect
   const state = gridEngine.getState();
   socket.emit('map-update', JSON.parse(JSON.stringify({ ...state, lastScan: null })));
   socket.emit('chart-init', JSON.parse(JSON.stringify(chartBuffer)));
@@ -342,17 +364,12 @@ io.on('connection', socket => {
 });
 
 // ─────────────────────────────────────────────
-//  ERROR HANDLER — MUST be after all routes
-//  Express requires 4-argument handlers at the bottom.
-//  Placing this before routes caused every Arduino POST
-//  to be intercepted as an error before matching the route.
+//  ERROR HANDLER — after all routes (Express requirement)
 // ─────────────────────────────────────────────
 app.use((err, req, res, next) => {
   if (err.type === 'request.aborted' || err.code === 'ECONNRESET') {
-    // ESP8266 closed connection before body was fully received.
-    // This is harmless — the packet was incomplete so we discard it.
-    // Do NOT call res.send() here — the socket is already gone.
-    console.log('⚠️ [Network] ESP8266 closed connection early. Ignoring packet.');
+    // Should never reach here now (rover-data uses raw reader)
+    // Kept as a safety net for any other routes
     return;
   }
   if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
