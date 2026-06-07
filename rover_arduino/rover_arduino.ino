@@ -165,14 +165,13 @@ void uploadAndPoll(float temp, float hum, int gas, int dist, String scanJson) {
   body += "\"gas\":"      + String(gas)                + ",";
   body += "\"distance\":" + String(dist)               + "}";
 
-  // ── Build HTTP POST ───────────────────────────────────────
-  String req  = "POST /rover-data HTTP/1.1\r\n";
-  req += "Host: "; req += SERVER_IP; req += ":";
-  req += String(SERVER_PORT); req += "\r\n";
-  req += "Connection: close\r\n";
-  req += "Content-Type: application/json\r\n";
-  req += "Content-Length: " + String(body.length()) + "\r\n\r\n";
-  req += body;
+  // ── Build HTTP Headers ────────────────────────────────────
+  String header  = "POST /rover-data HTTP/1.1\r\n";
+  header += "Host: "; header += SERVER_IP; header += ":";
+  header += String(SERVER_PORT); header += "\r\n";
+  header += "Connection: close\r\n";
+  header += "Content-Type: application/json\r\n";
+  header += "Content-Length: " + String(body.length()) + "\r\n\r\n";
 
   // ── Reset ESP connection state ────────────────────────────
   espFlush(300);
@@ -206,8 +205,10 @@ void uploadAndPoll(float temp, float hum, int gas, int dist, String scanJson) {
     return;
   }
 
-  // ── Send request ──────────────────────────────────────────
-  espSend("AT+CIPSEND=" + String(req.length()));
+  // ── Send request (AVOID OOM BY SENDING IN PARTS) ──────────
+  int totalLen = header.length() + body.length();
+  espSend("AT+CIPSEND=" + String(totalLen));
+  
   if (!espWaitFor(">", 4000)) {
     Serial.println(F("[Upload] No prompt — aborting"));
     espSend("AT+CIPCLOSE");
@@ -215,11 +216,10 @@ void uploadAndPoll(float temp, float hum, int gas, int dist, String scanJson) {
     return;
   }
 
-  // Send every byte with no delay — delay(3) per char was
-  // causing ESP to timeout mid-send and server to see truncated request
-  for (int i = 0; i < req.length(); i++) {
-    esp8266.write(req[i]);
-  }
+  // Send headers
+  for (int i = 0; i < header.length(); i++) esp8266.write(header[i]);
+  // Send body
+  for (int i = 0; i < body.length(); i++) esp8266.write(body[i]);
 
   if (!espWaitFor("SEND OK", 8000)) {
     Serial.println(F("[Upload] No SEND OK"));
