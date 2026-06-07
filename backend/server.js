@@ -1,12 +1,5 @@
 // ══════════════════════════════════════════════════════════════
 //  COMBINED SERVER  v4.1  — Room Scanning Edition
-//  Cloud-Monitored Environmental Rover  +  Real Occupancy Grid
-//  ─ Bresenham ray-tracing via gridMap.js
-//  ─ Backward-compatible: works with old AND new Arduino firmware
-//  ─ /rover-data with scan[] → occupancy grid
-//  ─ /rover-data without scan[] → legacy simple grid
-//  ─ MIT App Inventor: /control /auto /led /data endpoints
-//  ─ /rover-data uses raw body reader — no more "aborted" errors
 // ══════════════════════════════════════════════════════════════
 
 const express    = require('express');
@@ -24,9 +17,10 @@ const server = http.createServer(app);
 const io     = new Server(server, { cors: { origin: '*' } });
 
 app.use(cors());
+app.use(express.json({ limit: '512kb' }));
 
 // ─────────────────────────────────────────────
-//  MongoDB — dual schema
+//  MongoDB
 // ─────────────────────────────────────────────
 const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/rover-combined';
 
@@ -35,10 +29,9 @@ let Alert         = null;
 let GridReading   = null;
 let sessionId     = `session_${Date.now()}`;
 
-// ── MIT App Inventor control state ──────────────────────────
-let currentCommand = "stop";  // last movement command from app
-let autoMode       = true;    // true = autonomous rover, false = app-controlled
-let ledState       = "off";   // LED state
+let currentCommand = "stop";
+let autoMode       = true;
+let ledState       = "off";
 
 mongoose.connect(MONGO_URI)
   .then(() => {
@@ -56,7 +49,6 @@ mongoose.connect(MONGO_URI)
     });
     Alert = mongoose.model('Alert', alertSchema);
 
-    // Extended schema — stores scan arrays for replay
     const gridSchema = new mongoose.Schema({
       x: Number, y: Number, heading: Number,
       temp: Number, humidity: Number, gas: Number,
@@ -70,7 +62,7 @@ mongoose.connect(MONGO_URI)
   .catch(err => console.warn('[MongoDB] ⚠️  Not available —', err.message));
 
 // ─────────────────────────────────────────────
-//  In-memory packet log + chart buffer
+//  In-memory buffers
 // ─────────────────────────────────────────────
 const packetLog   = [];
 const chartBuffer = [];
@@ -93,7 +85,6 @@ function logPacket(data, source) {
   return entry;
 }
 
-// ── Check and emit alert ──────────────────────────────────────
 async function checkAlert(data, x, y) {
   const gas     = data.gas ?? 0;
   const payload = gas > 400 ? { type: 'DANGER',  message: `Gas ${gas} ppm at (${Math.round(x)},${Math.round(y)}) cm` }
@@ -104,43 +95,78 @@ async function checkAlert(data, x, y) {
   }
 }
 
-// ══════════════════════════════════════════════════════════════
-//  CUSTOM RAW BODY READER FOR /rover-data
-//
-//  express.json() throws "request.aborted" when the ESP8266
-//  closes the TCP connection before the HTTP body is fully
-//  received on the server side.
-//
-//  The fix: define /rover-data BEFORE app.use(express.json())
-//  with its own body reader that tolerates early close.
-//  express.json() will NEVER run for this route.
-// ══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════
+//  ROUTES
+// ══════════════════════════════════════════════
 
-function readRoverBody(req, res, next) {
-  let raw  = '';
-  let done = false;
-
-  req.setEncoding('utf8');
-
-  req.on('data', chunk => { if (!done) raw += chunk; });
-
-  req.on('end', () => {
-    if (done) return;
-    done = true;
-    try   { req.body = JSON.parse(raw); }
-    catch { req.body = null; }
-    next();
+app.get('/data', (req, res) => {
+  const latest = chartBuffer.length > 0 ? chartBuffer[chartBuffer.length - 1] : { temperature: 0, humidity: 0, gas: 0, distance: 0 };
+  res.json({
+    temp:           latest.temperature,
+    humidity:       latest.humidity,
+    gas:            latest.gas,
+    distance:       latest.distance,
+    autoMode:       autoMode,
+    currentCommand: currentCommand,
+    ledStatus:      ledState
   });
+});
 
-  // ESP8266 closed before full body arrived — discard silently, no log spam
-  req.on('aborted', () => { done = true; });
-  req.on('error',   () => { done = true; });
-}
+app.get('/control', (req, res) => {
+  const cmd = req.query.cmd;
+  if (cmd) {
+    currentCommand = cmd;
+    autoMode       = false;
+    console.log(`📱 App command: ${currentCommand} → Manual Mode ON`);
+    res.send(`Command ${currentCommand} received`);
+  } else {
+    res.status(400).send("No command provided");
+  }
+});
 
-// ── POST /rover-data — MUST be before app.use(express.json())
-app.post('/rover-data', readRoverBody, (req, res) => {
-  const d = req.body;
+app.get('/auto', (req, res) => {
+  const toggle = req.query.toggle;
+  if (toggle !== undefined) {
+    autoMode = (toggle === 'true');
+  } else {
+    autoMode = !autoMode;
+  }
+  if (autoMode) currentCommand = 'stop';
+  console.log(`🤖 Auto Mode: ${autoMode ? 'ON' : 'OFF'}`);
+  res.json({ success: true, autoMode });
+});
+
+app.get('/led', (req, res) => {
+  const st = (req.query.state || '').toLowerCase();
+  if (st === 'on' || st === 'off') {
+    ledState = st;
+    console.log(`💡 LED: ${ledState.toUpperCase()}`);
+    res.send(`LED ${ledState}`);
+  } else {
+    res.status(400).send('Use ?state=on or ?state=off');
+  }
+});
+
+app.get('/rover/command/raw', (req, res) => {
+  res.setHeader('Content-Type', 'text/plain');
+  res.send(autoMode ? 'auto' : currentCommand);
+});
+
+// ── POST /rover-data — uses express.text() to catch everything, even malformed
+app.post('/rover-data', express.text({ type: '*/*', limit: '1mb' }), (req, res) => {
+  let d;
+  try {
+    d = JSON.parse(req.body);
+  } catch (err) {
+    console.log('⚠️ [rover-data] Failed to parse JSON. Raw body received:');
+    console.log('--------------------------------------------------');
+    console.log(req.body);
+    console.log('--------------------------------------------------');
+    return res.status(400).end();
+  }
+
   if (!d || d.x === undefined) {
+    console.log('⚠️ [rover-data] Missing x in packet. Ignored.');
     return res.status(400).end();
   }
 
@@ -172,73 +198,6 @@ app.post('/rover-data', readRoverBody, (req, res) => {
   }
 });
 
-// ── Global JSON middleware for all other routes ──────────────
-// Defined AFTER /rover-data so it never runs for that route
-app.use(express.json({ limit: '512kb' }));
-
-// ══════════════════════════════════════════════
-//  ROUTES
-// ══════════════════════════════════════════════
-
-// ── GET /data — MIT App polls every 2s for sensor readings
-app.get('/data', (req, res) => {
-  const latest = chartBuffer.length > 0 ? chartBuffer[chartBuffer.length - 1] : { temperature: 0, humidity: 0, gas: 0, distance: 0 };
-  res.json({
-    temp:           latest.temperature,
-    humidity:       latest.humidity,
-    gas:            latest.gas,
-    distance:       latest.distance,
-    autoMode:       autoMode,
-    currentCommand: currentCommand,
-    ledStatus:      ledState
-  });
-});
-
-// ── GET /control — MIT App sends movement commands
-app.get('/control', (req, res) => {
-  const cmd = req.query.cmd;
-  if (cmd) {
-    currentCommand = cmd;
-    autoMode       = false;
-    console.log(`📱 App command: ${currentCommand} → Manual Mode ON`);
-    res.send(`Command ${currentCommand} received`);
-  } else {
-    res.status(400).send("No command provided");
-  }
-});
-
-// ── GET /auto — Toggle autonomous / manual mode
-app.get('/auto', (req, res) => {
-  const toggle = req.query.toggle;
-  if (toggle !== undefined) {
-    autoMode = (toggle === 'true');
-  } else {
-    autoMode = !autoMode;
-  }
-  if (autoMode) currentCommand = 'stop';
-  console.log(`🤖 Auto Mode: ${autoMode ? 'ON  (rover drives itself)' : 'OFF (app in control)'}`);
-  res.json({ success: true, autoMode });
-});
-
-// ── GET /led — LED on/off
-app.get('/led', (req, res) => {
-  const st = (req.query.state || '').toLowerCase();
-  if (st === 'on' || st === 'off') {
-    ledState = st;
-    console.log(`💡 LED: ${ledState.toUpperCase()}`);
-    res.send(`LED ${ledState}`);
-  } else {
-    res.status(400).send('Use ?state=on or ?state=off');
-  }
-});
-
-// ── GET /rover/command/raw — plain-text fallback for Arduino
-app.get('/rover/command/raw', (req, res) => {
-  res.setHeader('Content-Type', 'text/plain');
-  res.send(autoMode ? 'auto' : currentCommand);
-});
-
-// ── POST /sensor-data  (legacy endpoint)
 app.post('/sensor-data', async (req, res) => {
   const { temperature, humidity, gas } = req.body;
   const data = { temp: temperature, temperature, humidity, hum: humidity, gas, x: 0, y: 0, heading: 0, distance: 0, obstacle: false };
@@ -253,7 +212,6 @@ app.post('/sensor-data', async (req, res) => {
   res.json({ message: 'Sensor data stored' });
 });
 
-// ── POST /simulate  (browser test)
 app.post('/simulate', (req, res) => {
   try {
     const d       = buildSimPacket(req.body);
@@ -309,7 +267,6 @@ app.get('/health', (req, res) => {
     cells: state.cellCount, coverage: state.coverage,
     wallCells: state.stats.wallCells, freeCells: state.stats.freeCells,
     dbOnline: SensorReading !== null,
-    autoMode, currentCommand, ledState,
     uptime: process.uptime().toFixed(1) + 's'
   });
 });
@@ -347,7 +304,7 @@ io.on('connection', socket => {
       io.emit('raw-data',     JSON.parse(JSON.stringify(entry)));
       io.emit('map-update',   JSON.parse(JSON.stringify({ ...mapData, lastScan: d.scan })));
       io.emit('chart-update', JSON.parse(JSON.stringify(chartBuffer.slice(-1)[0] || {})));
-      console.log(`[SIM WS #${entry.id}] X=${d.x} Y=${d.y} Hdg=${d.heading} → ${io.engine.clientsCount} browser(s)`);
+      console.log(`[SIM WS #${entry.id}] X=${d.x} Y=${d.y} Hdg=${d.heading}`);
     } catch(err) {
       console.error('[client-simulate] Error:', err.message);
       socket.emit('sim-error', { error: err.message });
@@ -364,13 +321,15 @@ io.on('connection', socket => {
 });
 
 // ─────────────────────────────────────────────
-//  ERROR HANDLER — after all routes (Express requirement)
+//  ERROR HANDLER — MUST be after all routes
+//  Express requires 4-argument handlers at the bottom
 // ─────────────────────────────────────────────
 app.use((err, req, res, next) => {
   if (err.type === 'request.aborted' || err.code === 'ECONNRESET') {
-    // Should never reach here now (rover-data uses raw reader)
-    // Kept as a safety net for any other routes
-    return;
+    // ESP8266 closed connection before body was fully received.
+    // This is harmless — the packet was incomplete so we discard it.
+    console.log('⚠️ [Network] ESP8266 closed connection early. Ignoring packet.');
+    return;   // don't try to res.send — socket is already gone
   }
   if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
     console.log('⚠️ [Network] Malformed JSON. Ignoring packet.');
@@ -409,12 +368,6 @@ server.listen(PORT, () => {
   GET  /replay        ← Scan history for replay
   GET  /alerts        ← Alert history
   GET  /health        ← Server status + coverage %
-
-  MIT App Inventor:
-  GET  /data          ← Sensor readings for phone
-  GET  /control?cmd=  ← Movement command from phone
-  GET  /auto?toggle=  ← Switch autonomous / manual
-  GET  /led?state=    ← LED on/off from phone
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);
 });
