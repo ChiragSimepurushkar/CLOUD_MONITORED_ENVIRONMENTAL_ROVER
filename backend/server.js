@@ -230,9 +230,11 @@ app.post('/rover-data', (req, res) => {
     checkAlert(d, d.x, d.y).catch(() => {});
     if (GridReading) GridReading.create({ ...d, sessionId }).catch(() => {});
 
-    // 5. Reply to the Arduino: "auto" = drive yourself, or the manual command
+    // 5. Reply to the Arduino with JSON containing the mode/command.
+    //    Arduino parses "cmd" field: "auto" = drive itself, else manual command.
+    //    Single TCP round-trip eliminates the "ESP8266 closed early" error.
     try {
-      res.send(autoMode ? 'auto' : currentCommand);
+      res.json({ ok: true, cmd: autoMode ? 'auto' : currentCommand });
     } catch(_) {}
 
   } catch(err) {
