@@ -42,6 +42,16 @@ DHT dht(DHTPIN, DHTTYPE);
 #define LED_PIN 5                          // Headlight LED on D5
 
 // --- L298N Motor Driver Pin Definitions ---
+float roverX           = 0.0;
+float roverY           = 0.0;
+float roverHeading     = 0.0;  // 0=North 90=East 180=South 270=West
+float distSinceLastScan = 0.0;
+
+// ── MIT App Inventor control state ───────────────────────────
+String       lastCommand    = "stop";  // last command received from app
+bool         manualMode     = false;   // true = app is controlling the rover
+unsigned long lastPollTime  = 0;
+const unsigned long pollInterval = 3000; // check server every 3s
 #define ENA 6                              // Left Motor Speed (Optional PWM)
 #define IN1 7                              // Left Motor direction 1
 #define IN2 8                              // Left Motor direction 2
@@ -55,8 +65,6 @@ WiFiEspClient client;
 // Timers to avoid blocking code
 unsigned long lastSendTime = 0;
 const unsigned long sendInterval = 3000;   // Send sensor data every 3 seconds
-unsigned long lastPollTime = 0;
-const unsigned long pollInterval = 1000;   // Poll control command every 1 second
 
 void setup() {
   Serial.begin(9600);                      // Hardware serial for Arduino IDE Serial Monitor
@@ -104,19 +112,30 @@ void setup() {
 }
 
 void loop() {
-  unsigned long currentTime = DateNowSimulator(); // Uses current runtime millisecond index
-  
-  // Task 1: Poll server for steering & LED commands (Every 1 second)
-  if (currentTime - lastPollTime >= pollInterval) {
-    lastPollTime = currentTime;
-    pollRoverCommands();
-    pollLedState();
+  delay(40);
+
+  // ── Poll server for app command every 3s ────────────────────────────
+  if (millis() - lastPollTime >= pollInterval) {
+    lastPollTime = millis();
+    pollCommand();
+  }
+
+  // ── MANUAL MODE: app has taken control ─────────────────────────────
+  if (manualMode) {
+    if      (lastCommand == "forward")  moveForward();
+    else if (lastCommand == "backward") moveBackward();
+    else if (lastCommand == "left")     turnLeft();
+    else if (lastCommand == "right")    turnRight();
+    else                                stopRover();
+    return;  // ← skip ALL autonomous navigation below
   }
 
   // Task 2: Read sensors & POST data to server (Every 3 seconds)
+  unsigned long currentTime = DateNowSimulator();
   if (currentTime - lastSendTime >= sendInterval) {
     lastSendTime = currentTime;
     postSensorData();
+    pollLedState();
   }
 }
 
@@ -125,25 +144,30 @@ unsigned long DateNowSimulator() {
   return millis();
 }
 
-// --- API COMMUNICATIONS ---
-
-// 1. GET /rover/command/raw -> Read direction from Express server
-void pollRoverCommands() {
+// ════════════════════════════════════════════════════════════
+//  POLL SERVER — GET /rover/command/raw (lightweight, every 3s)
+// ════════════════════════════════════════════════════════════
+void pollCommand() {
   if (client.connect(server, port)) {
     client.println("GET /rover/command/raw HTTP/1.1");
     client.print("Host: ");
     client.println(server);
     client.println("Connection: close");
-    client.println(); // Empty line showing end of headers
+    client.println(); 
 
-    // Read response
     String response = readRawResponse();
-    response.trim(); // Clean whitespace
+    response.trim();
 
     if (response.length() > 0) {
-      Serial.print("Command received: ");
-      Serial.println(response);
-      executeCommand(response);
+      if (response == "auto") {
+        if (manualMode) {
+          manualMode = false;
+          stopRover();
+        }
+      } else {
+        manualMode = true;
+        lastCommand = response;
+      }
     }
     client.stop();
   }

@@ -48,8 +48,10 @@ let Alert         = null;
 let GridReading   = null;
 let sessionId     = `session_${Date.now()}`;
 
-// Hold the latest command from the phone app
-let currentCommand = "stop";
+// ── MIT App Inventor control state ──────────────────────────
+let currentCommand = "stop";  // last movement command from app
+let autoMode       = true;    // true = autonomous rover, false = app-controlled
+let ledState       = "off";   // LED state
 
 mongoose.connect(MONGO_URI)
   .then(() => {
@@ -126,10 +128,13 @@ async function checkAlert(data, x, y) {
 app.get('/data', (req, res) => {
   const latest = chartBuffer.length > 0 ? chartBuffer[chartBuffer.length - 1] : { temperature: 0, humidity: 0, gas: 0, distance: 0 };
   res.json({
-    temp: latest.temperature,
-    humidity: latest.humidity,
-    gas: latest.gas,
-    distance: latest.distance
+    temp:           latest.temperature,
+    humidity:       latest.humidity,
+    gas:            latest.gas,
+    distance:       latest.distance,
+    autoMode:       autoMode,
+    currentCommand: currentCommand,
+    ledStatus:      ledState
   });
 });
 
@@ -141,11 +146,54 @@ app.get('/control', (req, res) => {
   const cmd = req.query.cmd;
   if (cmd) {
     currentCommand = cmd;
-    console.log(`📱 App sent command: ${currentCommand}`);
+    autoMode       = false;   // ← switching to manual the moment app sends a command
+    console.log(`📱 App command: ${currentCommand} → Manual Mode ON`);
     res.send(`Command ${currentCommand} received`);
   } else {
     res.status(400).send("No command provided");
   }
+});
+
+// ---------------------------------------------------------
+// ROUTE 3: Toggle Auto / Manual mode
+// App calls: GET /auto?toggle=true  → autonomous ON
+//            GET /auto?toggle=false → manual (app takes control)
+// ---------------------------------------------------------
+app.get('/auto', (req, res) => {
+  const toggle = req.query.toggle;
+  if (toggle !== undefined) {
+    autoMode = (toggle === 'true');
+  } else {
+    autoMode = !autoMode;   // flip if no param
+  }
+  if (autoMode) currentCommand = 'stop';  // clear manual cmd when going auto
+  console.log(`🤖 Auto Mode: ${autoMode ? 'ON  (rover drives itself)' : 'OFF (app in control)'}`);
+  res.json({ success: true, autoMode });
+});
+
+// ---------------------------------------------------------
+// ROUTE 4: LED control
+// App calls: GET /led?state=on  or  GET /led?state=off
+// ---------------------------------------------------------
+app.get('/led', (req, res) => {
+  const st = (req.query.state || '').toLowerCase();
+  if (st === 'on' || st === 'off') {
+    ledState = st;
+    console.log(`💡 LED: ${ledState.toUpperCase()}`);
+    res.send(`LED ${ledState}`);
+  } else {
+    res.status(400).send('Use ?state=on or ?state=off');
+  }
+});
+
+// ---------------------------------------------------------
+// ROUTE 5: Arduino polls this to get plain-text command
+// Returns "auto" when rover should drive itself,
+// or "forward" / "backward" / "left" / "right" / "stop"
+// ---------------------------------------------------------
+app.get('/rover/command/raw', (req, res) => {
+  res.setHeader('Content-Type', 'text/plain');
+  res.send(autoMode ? 'auto' : currentCommand);
 });
 
 // ── POST /rover-data  (Arduino — supports old and new firmware)
@@ -182,9 +230,9 @@ app.post('/rover-data', (req, res) => {
     checkAlert(d, d.x, d.y).catch(() => {});
     if (GridReading) GridReading.create({ ...d, sessionId }).catch(() => {});
 
-    // 5. Reply to the Arduino with the current command from the phone!
-    try { 
-      res.send(currentCommand); 
+    // 5. Reply to the Arduino: "auto" = drive yourself, or the manual command
+    try {
+      res.send(autoMode ? 'auto' : currentCommand);
     } catch(_) {}
 
   } catch(err) {
