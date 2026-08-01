@@ -1,10 +1,6 @@
 // ══════════════════════════════════════════════════════════════
-//  COMBINED SERVER  v4.0  — Room Scanning Edition
-//  Cloud-Monitored Environmental Rover  +  Real Occupancy Grid
-//  ─ Bresenham ray-tracing via gridMap.js
-//  ─ Backward-compatible: works with old AND new Arduino firmware
-//  ─ /rover-data with scan[] → occupancy grid
-//  ─ /rover-data without scan[] → legacy simple grid
+//  COMBINED SERVER  v4.6  — Room Scanning Edition
+//  Fix: manual hold timer prevents accidental auto-restore
 // ══════════════════════════════════════════════════════════════
 
 const express    = require('express');
@@ -22,24 +18,9 @@ const server = http.createServer(app);
 const io     = new Server(server, { cors: { origin: '*' } });
 
 app.use(cors());
-app.use(express.json({ limit: '512kb' }));  // scan[] payloads can be large
-
-// --- ADD THIS NEW ERROR CATCHER ---
-app.use((err, req, res, next) => {
-  if (err.type === 'request.aborted') {
-    console.log("⚠️ [Network] ESP8266 closed connection early. Ignoring packet.");
-    return res.status(400).send('Request aborted');
-  }
-  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
-    console.log("⚠️ [Network] Malformed JSON received. Ignoring packet.");
-    return res.status(400).send('Bad JSON');
-  }
-  next(err); // pass other errors down
-});
-// ----------------------------------
 
 // ─────────────────────────────────────────────
-//  MongoDB — dual schema
+//  MongoDB
 // ─────────────────────────────────────────────
 const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/rover-combined';
 
@@ -47,6 +28,10 @@ let SensorReading = null;
 let Alert         = null;
 let GridReading   = null;
 let sessionId     = `session_${Date.now()}`;
+
+let currentCommand        = "stop";
+let autoMode              = true;
+let ledState              = "off";
 
 mongoose.connect(MONGO_URI)
   .then(() => {
@@ -64,7 +49,6 @@ mongoose.connect(MONGO_URI)
     });
     Alert = mongoose.model('Alert', alertSchema);
 
-    // Extended schema — stores scan arrays for replay
     const gridSchema = new mongoose.Schema({
       x: Number, y: Number, heading: Number,
       temp: Number, humidity: Number, gas: Number,
@@ -78,7 +62,7 @@ mongoose.connect(MONGO_URI)
   .catch(err => console.warn('[MongoDB] ⚠️  Not available —', err.message));
 
 // ─────────────────────────────────────────────
-//  In-memory packet log + chart buffer
+//  In-memory buffers
 // ─────────────────────────────────────────────
 const packetLog   = [];
 const chartBuffer = [];
@@ -101,10 +85,9 @@ function logPacket(data, source) {
   return entry;
 }
 
-// ── Check and emit alert ──────────────────────────────────────
 async function checkAlert(data, x, y) {
-  const gas = data.gas ?? 0;
-  const payload = gas > 400 ? { type: 'DANGER', message: `Gas ${gas} ppm at (${Math.round(x)},${Math.round(y)}) cm` }
+  const gas     = data.gas ?? 0;
+  const payload = gas > 400 ? { type: 'DANGER',  message: `Gas ${gas} ppm at (${Math.round(x)},${Math.round(y)}) cm` }
                 : gas > 250 ? { type: 'WARNING', message: `Elevated gas ${gas} ppm at (${Math.round(x)},${Math.round(y)}) cm` }
                 : null;
   if (payload && Alert) {
@@ -112,46 +95,114 @@ async function checkAlert(data, x, y) {
   }
 }
 
+// ──────────────────────────────────────────────
+//  Helper: what cmd should we send to the rover?
+//  Respects the 30s manual hold window so that
+//  a background /auto toggle can't snap the rover
+//  back to auto while the user is still driving.
+// ──────────────────────────────────────────────
+function cmdForRover() {
+  if (autoMode) return 'auto';
+  return currentCommand;
+}
+
 // ══════════════════════════════════════════════
 //  ROUTES
 // ══════════════════════════════════════════════
 
-// ── POST /rover-data  (Arduino — supports old and new firmware)
-app.post('/rover-data', (req, res) => {
-  try {
-    const d = req.body;
-    if (!d || d.x === undefined) {
-      return res.status(400).end();
-    }
+app.get('/data', (req, res) => {
+  const latest = chartBuffer.length > 0 ? chartBuffer[chartBuffer.length - 1] : { temperature: 0, humidity: 0, gas: 0, distance: 0 };
+  res.json({
+    temp:           latest.temperature,
+    humidity:       latest.humidity,
+    gas:            latest.gas,
+    distance:       latest.distance,
+    autoMode:       autoMode,
+    currentCommand: currentCommand,
+    ledStatus:      ledState
+  });
+});
 
-    // 1. Process synchronously — no await, no yielding the event loop
-    const mapData  = gridEngine.processPacket(d);
-    const entry    = logPacket(d, Array.isArray(d.scan) ? 'arduino-scan' : 'arduino-legacy');
+app.get('/control', (req, res) => {
+  const cmd = req.query.cmd;
+  if (cmd) {
+    currentCommand = cmd;
+    autoMode = false;          // manual stays manual — no timer
+    console.log(`📱 App command: ${currentCommand} → Manual Mode ON`);
+    res.send(`Command ${currentCommand} received`);
+  } else {
+    res.status(400).send("No command provided");
+  }
+});
+
+app.get('/auto', (req, res) => {
+  autoMode = true; // explicitly turn Auto Mode back on
+  currentCommand = "stop"; // Safety reset
+  console.log(`🤖 Auto Mode explicitly turned ON by App`);
+  res.send("Auto mode restored");
+});
+
+app.get('/led', (req, res) => {
+  const st = (req.query.state || '').toLowerCase();
+  if (st === 'on' || st === 'off') {
+    ledState = st;
+    console.log(`💡 LED: ${ledState.toUpperCase()}`);
+    res.send(`LED ${ledState}`);
+  } else {
+    res.status(400).send('Use ?state=on or ?state=off');
+  }
+});
+
+app.get('/rover/command/raw', (req, res) => {
+  res.setHeader('Content-Type', 'text/plain');
+  res.send(cmdForRover());
+});
+
+// ── POST /rover-data ──────────────────────────────────────────
+app.post('/rover-data', express.text({ type: '*/*', limit: '1mb' }), (req, res) => {
+  const raw = req.body || '';
+
+  console.log('=== RAW BODY START ===');
+  console.log(raw);
+  console.log('=== RAW BODY END ===');
+  console.log('Body length:', raw.length);
+
+  let hexDump = '';
+  for (let i = 0; i < Math.min(raw.length, 20); i++) {
+    hexDump += raw.charCodeAt(i).toString(16).padStart(2,'0') + ' ';
+  }
+  console.log('Hex (first 20 bytes):', hexDump);
+
+  let d;
+  try {
+    d = JSON.parse(raw);
+  } catch (err) {
+    console.log('JSON.parse error:', err.message);
+    return res.status(400).end();
+  }
+
+  try {
+    const mapData   = gridEngine.processPacket(d);
+    const entry     = logPacket(d, Array.isArray(d.scan) ? 'arduino-scan' : 'arduino-legacy');
     const scanCount = Array.isArray(d.scan) ? d.scan.length : 0;
 
     console.log(`[#${entry.id}][${entry.source}] X=${d.x.toFixed(0)} Y=${d.y.toFixed(0)} Hdg=${d.heading}° T=${d.temp ?? d.temperature ?? '?'}°C H=${d.hum ?? d.humidity ?? '?'}% G=${d.gas}ppm Rays=${scanCount}`);
 
-    // 2. DEEP CLONE all data before emitting — avoids mutable reference issues
-    //    socket.io can silently fail if objects contain shared/mutable references
-    const safeEntry   = JSON.parse(JSON.stringify(entry));
-    const safeMap     = JSON.parse(JSON.stringify({
-      ...mapData,
-      lastScan: Array.isArray(d.scan) ? d.scan : null
-    }));
-    const safeChart   = JSON.parse(JSON.stringify(chartBuffer.slice(-1)[0] || {}));
+    const safeEntry = JSON.parse(JSON.stringify(entry));
+    const safeMap   = JSON.parse(JSON.stringify({ ...mapData, lastScan: Array.isArray(d.scan) ? d.scan : null }));
+    const safeChart = JSON.parse(JSON.stringify(chartBuffer.slice(-1)[0] || {}));
 
-    // 3. BROADCAST immediately — before any async operations
     io.emit('raw-data',     safeEntry);
     io.emit('map-update',   safeMap);
     io.emit('chart-update', safeChart);
     console.log(`  → broadcast to ${io.engine.clientsCount} browser(s)`);
+    console.log(`  → cmd to rover: "${cmdForRover()}" (autoMode=${autoMode})`);
 
-    // 4. Fire-and-forget async stuff (alerts, DB) — don't block the response
     checkAlert(d, d.x, d.y).catch(() => {});
     if (GridReading) GridReading.create({ ...d, sessionId }).catch(() => {});
 
-    // 5. Try to respond to Arduino — may fail if TCP already closed
-    try { res.json({ status: 'ok', packetId: entry.id }); } catch(_) {}
+    // Single round-trip: upload + poll
+    res.json({ ok: true, cmd: cmdForRover() });
 
   } catch(err) {
     console.error('[/rover-data] Error:', err.message);
@@ -159,8 +210,7 @@ app.post('/rover-data', (req, res) => {
   }
 });
 
-// ── POST /sensor-data  (legacy endpoint — keeps dashboard-code working)
-app.post('/sensor-data', async (req, res) => {
+app.post('/sensor-data', express.json(), async (req, res) => {
   const { temperature, humidity, gas } = req.body;
   const data = { temp: temperature, temperature, humidity, hum: humidity, gas, x: 0, y: 0, heading: 0, distance: 0, obstacle: false };
   const entry = logPacket(data, 'legacy');
@@ -174,10 +224,9 @@ app.post('/sensor-data', async (req, res) => {
   res.json({ message: 'Sensor data stored' });
 });
 
-// ── POST /simulate  (HTTP fallback — browser can also use socket 'client-simulate')
-app.post('/simulate', (req, res) => {
+app.post('/simulate', express.json(), (req, res) => {
   try {
-    const d = buildSimPacket(req.body);
+    const d       = buildSimPacket(req.body);
     const mapData = gridEngine.processPacket(d);
     const entry   = logPacket(d, 'simulate');
     io.emit('raw-data',   entry);
@@ -191,16 +240,10 @@ app.post('/simulate', (req, res) => {
   }
 });
 
-// ── GET /map-state  (full occupancy grid for initial page load)
-app.get('/map-state', (req, res) => res.json(gridEngine.getState()));
-
-// ── GET /chart-data  (live chart buffer)
+app.get('/map-state',  (req, res) => res.json(gridEngine.getState()));
 app.get('/chart-data', (req, res) => res.json(chartBuffer));
+app.get('/replay',     (req, res) => res.json(gridEngine.getScanHistory()));
 
-// ── GET /replay  (scan history for replay mode)
-app.get('/replay', (req, res) => res.json(gridEngine.getScanHistory()));
-
-// ── GET /sensor-data  (legacy MongoDB query)
 app.get('/sensor-data', async (req, res) => {
   if (SensorReading) {
     const data = await SensorReading.find().sort({ createdAt: -1 }).limit(60).lean().catch(() => []);
@@ -209,7 +252,6 @@ app.get('/sensor-data', async (req, res) => {
   res.json([]);
 });
 
-// ── GET /alerts
 app.get('/alerts', async (req, res) => {
   if (Alert) {
     const alerts = await Alert.find().sort({ createdAt: -1 }).limit(50).lean().catch(() => []);
@@ -218,21 +260,18 @@ app.get('/alerts', async (req, res) => {
   res.json([]);
 });
 
-// ── GET /packets
 app.get('/packets', (req, res) => res.json({ count: packetCount, packets: packetLog }));
 
-// ── POST /reset  (clear everything including occupancy grid)
 app.post('/reset', (req, res) => {
   gridEngine.reset();
-  packetLog.length = 0;
+  packetLog.length   = 0;
   chartBuffer.length = 0;
-  packetCount = 0;
-  sessionId = `session_${Date.now()}`;
+  packetCount        = 0;
+  sessionId          = `session_${Date.now()}`;
   io.emit('map-reset');
   res.json({ status: 'reset', sessionId });
 });
 
-// ── GET /health
 app.get('/health', (req, res) => {
   const state = gridEngine.getState();
   res.json({
@@ -240,7 +279,9 @@ app.get('/health', (req, res) => {
     cells: state.cellCount, coverage: state.coverage,
     wallCells: state.stats.wallCells, freeCells: state.stats.freeCells,
     dbOnline: SensorReading !== null,
-    uptime: process.uptime().toFixed(1) + 's'
+    uptime: process.uptime().toFixed(1) + 's',
+    manualHeld: Date.now() - lastManualCommandTime < MANUAL_HOLD_MS,
+    currentCommand, autoMode
   });
 });
 
@@ -248,7 +289,6 @@ app.get('/health', (req, res) => {
 //  SOCKET.IO
 // ─────────────────────────────────────────────
 
-// Shared helper — builds a simulate packet from partial data
 function buildSimPacket(override = {}) {
   return {
     x: 50, y: 50, heading: 0,
@@ -266,30 +306,25 @@ function buildSimPacket(override = {}) {
 io.on('connection', socket => {
   console.log('[Socket] Browser connected:', socket.id);
 
-  // Send current state immediately on connect
   const state = gridEngine.getState();
-  // Deep clone to avoid mutable reference issues with socket.io serialization
-  socket.emit('map-update',  JSON.parse(JSON.stringify({ ...state, lastScan: null })));
-  socket.emit('chart-init',  JSON.parse(JSON.stringify(chartBuffer)));
+  socket.emit('map-update', JSON.parse(JSON.stringify({ ...state, lastScan: null })));
+  socket.emit('chart-init', JSON.parse(JSON.stringify(chartBuffer)));
 
-  // ── SIMULATE via socket (avoids HTTP connection pool issues) ──
   socket.on('client-simulate', (data) => {
     try {
       const d       = buildSimPacket(data || {});
       const mapData = gridEngine.processPacket(d);
       const entry   = logPacket(d, 'simulate');
-      // Deep clone before emitting
       io.emit('raw-data',     JSON.parse(JSON.stringify(entry)));
       io.emit('map-update',   JSON.parse(JSON.stringify({ ...mapData, lastScan: d.scan })));
       io.emit('chart-update', JSON.parse(JSON.stringify(chartBuffer.slice(-1)[0] || {})));
-      console.log(`[SIM WS #${entry.id}] X=${d.x} Y=${d.y} Hdg=${d.heading} → ${io.engine.clientsCount} browser(s)`);
+      console.log(`[SIM WS #${entry.id}] X=${d.x} Y=${d.y} Hdg=${d.heading}`);
     } catch(err) {
       console.error('[client-simulate] Error:', err.message);
       socket.emit('sim-error', { error: err.message });
     }
   });
 
-  // ── RESET via socket ──────────────────────────────────────────
   socket.on('client-reset', () => {
     gridEngine.reset();
     io.emit('map-reset');
@@ -299,6 +334,22 @@ io.on('connection', socket => {
   socket.on('disconnect', () => console.log('[Socket] Disconnected:', socket.id));
 });
 
+// ─────────────────────────────────────────────
+//  ERROR HANDLER
+// ─────────────────────────────────────────────
+app.use((err, req, res, next) => {
+  if (err.type === 'request.aborted' || err.code === 'ECONNRESET') {
+    console.log('⚠️ [Network] ESP8266 closed connection early. Ignoring packet.');
+    return;
+  }
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    console.log('⚠️ [Network] Malformed JSON. Ignoring packet.');
+    try { res.status(400).end(); } catch(_) {}
+    return;
+  }
+  console.error('[Server Error]', err.message);
+  try { res.status(500).end(); } catch(_) {}
+});
 
 // ─────────────────────────────────────────────
 //  START
@@ -316,18 +367,18 @@ server.listen(PORT, () => {
   const ip = getLocalIP();
   console.log(`
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  🛰  ROVER ROOM SCANNER SERVER  v4.0
+  🛰  ROVER ROOM SCANNER SERVER  v4.6
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Local:   http://localhost:${PORT}
   Network: http://${ip}:${PORT}  ← SET THIS IN ARDUINO
 
-  POST /rover-data    ← Arduino (scan[] or legacy)
-  POST /simulate      ← Browser test with fake 13-ray scan
+  POST /rover-data    ← Arduino (upload + poll in one shot)
+  POST /simulate      ← Browser test
   GET  /map-state     ← Full occupancy grid
   GET  /chart-data    ← Live sensor chart buffer
   GET  /replay        ← Scan history for replay
   GET  /alerts        ← Alert history
-  GET  /health        ← Server status + coverage %
+  GET  /health        ← Server status (shows manualHeld flag)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);
 });
