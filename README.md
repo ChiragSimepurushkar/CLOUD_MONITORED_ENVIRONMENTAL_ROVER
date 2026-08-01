@@ -1,58 +1,96 @@
-<![CDATA[# 🛰 Cloud-Monitored Environmental Rover
+<div align="center">
 
-> **An autonomous room-scanning robot that maps its environment, monitors air quality in real-time, and streams everything to a stunning 3D web dashboard — controllable from your phone.**
+# 🛰 Cloud-Monitored Environmental Rover
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Platform-Arduino%20UNO-00979D?style=for-the-badge&logo=arduino" />
-  <img src="https://img.shields.io/badge/WiFi-ESP8266--01-E7352C?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/Backend-Node.js%20%2B%20Express-339933?style=for-the-badge&logo=node.js" />
-  <img src="https://img.shields.io/badge/Frontend-React%20%2B%20Recharts-61DAFB?style=for-the-badge&logo=react" />
-  <img src="https://img.shields.io/badge/Database-MongoDB-47A248?style=for-the-badge&logo=mongodb" />
-  <img src="https://img.shields.io/badge/Mobile-MIT%20App%20Inventor-FFA000?style=for-the-badge" />
-</p>
+### *An Autonomous Room-Scanning Robot with Real-Time 3D Mapping, Environmental Monitoring & Mobile Control*
+
+<br/>
+
+![Arduino](https://img.shields.io/badge/Arduino-UNO_R3-00979D?style=for-the-badge&logo=arduino&logoColor=white)
+![ESP8266](https://img.shields.io/badge/WiFi-ESP8266--01-E7352C?style=for-the-badge&logo=espressif&logoColor=white)
+![Node.js](https://img.shields.io/badge/Backend-Node.js_v5-339933?style=for-the-badge&logo=node.js&logoColor=white)
+![React](https://img.shields.io/badge/Frontend-React_19-61DAFB?style=for-the-badge&logo=react&logoColor=black)
+![MongoDB](https://img.shields.io/badge/Database-MongoDB-47A248?style=for-the-badge&logo=mongodb&logoColor=white)
+![Socket.IO](https://img.shields.io/badge/Realtime-Socket.IO_v4-010101?style=for-the-badge&logo=socket.io&logoColor=white)
+![MIT App](https://img.shields.io/badge/Mobile-MIT_App_Inventor-FFA000?style=for-the-badge&logo=android&logoColor=white)
+
+---
+
+**Goa College of Engineering** · Department of Computer Engineering  
+SE COMP — Batch A · Academic Year 2024–2025  
+Internet of Things (IoT) — Final Capstone Project
+
+</div>
 
 ---
 
 ## 📑 Table of Contents
 
+<details>
+<summary><b>Click to expand full table of contents</b></summary>
+
 1. [Project Overview](#-project-overview)
-2. [Key Features](#-key-features)
-3. [System Architecture](#-system-architecture)
-4. [Hardware Components](#-hardware-components)
-5. [Wiring Guide](#-wiring-guide)
-6. [Software Stack](#-software-stack)
-7. [Arduino Firmware (v4.5)](#-arduino-firmware-v45)
-8. [Node.js Backend Server (v4.1)](#-nodejs-backend-server-v41)
-9. [React Web Dashboard](#-react-web-dashboard)
-10. [MIT App Inventor Mobile App](#-mit-app-inventor-mobile-app)
-11. [API Reference](#-api-reference)
-12. [Occupancy Grid Algorithm](#-occupancy-grid-algorithm)
-13. [Communication Protocol](#-communication-protocol)
-14. [Setup & Installation](#-setup--installation)
-15. [Component Testing Guide](#-component-testing-guide)
-16. [Development Journey & Challenges](#-development-journey--challenges)
-17. [Troubleshooting](#-troubleshooting)
-18. [Project Structure](#-project-structure)
-19. [Future Improvements](#-future-improvements)
-20. [Team & Credits](#-team--credits)
+2. [The Problem We Solve](#-the-problem-we-solve)
+3. [Key Features](#-key-features)
+4. [System Architecture](#-system-architecture)
+5. [Hardware Components](#-hardware-components)
+6. [Complete Wiring Guide](#-complete-wiring-guide)
+7. [Software Stack](#-software-stack)
+8. [Arduino Firmware v4.5](#-arduino-firmware-v45)
+9. [Node.js Backend Server v4.1](#-nodejs-backend-server-v41)
+10. [Occupancy Grid Mapping Algorithm](#-occupancy-grid-mapping-algorithm)
+11. [React Web Dashboard](#-react-web-dashboard)
+12. [MIT App Inventor Mobile App](#-mit-app-inventor-mobile-app)
+13. [Complete API Reference](#-complete-api-reference)
+14. [Communication Protocol Deep-Dive](#-communication-protocol-deep-dive)
+15. [Simulation & 3D Modelling](#-simulation--3d-modelling)
+16. [Setup & Installation](#-setup--installation)
+17. [Component Testing Guide](#-component-testing-guide)
+18. [Development Journey & Challenges](#-development-journey--challenges)
+19. [Troubleshooting Quick Reference](#-troubleshooting-quick-reference)
+20. [Project File Structure](#-project-file-structure)
+21. [Future Improvements](#-future-improvements)
+22. [Team Contributions](#-team-contributions)
+23. [References](#-references)
+
+</details>
 
 ---
 
 ## 🌍 Project Overview
 
-The **Cloud-Monitored Environmental Rover** is a full-stack IoT system built for an Engineering Capstone Project. It combines **robotics**, **environmental sensing**, **real-time networking**, and **cloud visualization** into a single integrated platform.
+The **Cloud-Monitored Environmental Rover** is a full-stack IoT system that combines **robotics**, **environmental sensing**, **real-time networking**, and **cloud visualization** into a single integrated platform. The rover autonomously navigates indoor spaces, builds a live occupancy grid map using ultrasonic scanning, and continuously monitors environmental parameters — streaming everything to a stunning 3D web dashboard.
 
-### The Problem
-Indoor air quality monitoring typically requires expensive, stationary sensors. You get data from one spot, but you don't know what's happening in the corners, behind furniture, or near ventilation systems.
+### What It Does
+```
+🤖 Drives autonomously → avoids obstacles → maps the room
+🌡️ Measures temperature, humidity, and gas at every position
+📡 Streams data over WiFi to a local Node.js cloud server
+🗺️ Builds a real-time 2D/3D occupancy grid using Bresenham ray-tracing
+📊 Visualises everything on a React dashboard with live charts
+📱 Can be remotely controlled from an Android phone app
+🚨 Triggers DANGER/WARNING alerts for hazardous gas readings
+```
+
+---
+
+## 🎯 The Problem We Solve
+
+Indoor air quality monitoring typically relies on **expensive, stationary sensors**. You get data from one spot — but you have no idea what's happening in the corners, behind furniture, near ventilation systems, or in areas with poor air circulation.
 
 ### Our Solution
-A **mobile robotic platform** that autonomously navigates a room, continuously scanning for:
-- 🌡️ **Temperature** anomalies (hot spots, cold zones)
-- 💧 **Humidity** variations
-- 💨 **Gas concentrations** (smoke, CO, LPG — MQ-2 sensor)
-- 📐 **Room geometry** via ultrasonic mapping
 
-All data streams in real-time to a **3D web dashboard** that builds a live occupancy grid map of the room, overlaid with environmental heatmaps. A companion **Android mobile app** lets a user take manual control of the rover at any time.
+A **mobile robotic platform** that goes everywhere in the room, collecting spatial environmental data:
+
+| Traditional Approach | Our Approach |
+|---|---|
+| Fixed sensor, single point | Mobile rover, covers entire room |
+| No spatial context | GPS-like X/Y position for every reading |
+| Manual placement required | Fully autonomous navigation |
+| Expensive commercial systems | Built from affordable Arduino components |
+| Data stays on device | Real-time cloud dashboard + mobile app |
+
+The result: **spatial environmental heatmaps** — you can see exactly which corners of the room are hotter, more humid, or have elevated gas concentrations.
 
 ---
 
@@ -60,66 +98,95 @@ All data streams in real-time to a **3D web dashboard** that builds a live occup
 
 | Category | Feature | Description |
 |---|---|---|
-| 🤖 Autonomy | Obstacle Avoidance | 7-angle ultrasonic sweep detects walls and objects at every scan stop |
-| 🤖 Autonomy | Dead Reckoning | Tracks X, Y position and heading using motor timing |
-| 🤖 Autonomy | Scan-on-Distance | Automatically stops and scans every 40cm of forward travel |
-| 🌐 Networking | Single-TCP Protocol | Upload + command poll merged into one HTTP round-trip (v4.5) |
-| 🌐 Networking | WiFi Auto-Reconnect | Hard ESP8266 reboot with 15s cooldown on connection loss |
-| 📊 Dashboard | 3D Occupancy Grid | Bresenham ray-traced map with walls, free space, and rover trail |
-| 📊 Dashboard | Live Sensor Charts | Real-time temperature, humidity, gas, and distance graphs |
-| 📊 Dashboard | Alert System | Automatic DANGER/WARNING alerts for high gas readings |
-| 📱 Mobile | D-Pad Control | Forward, Backward, Left, Right, Stop buttons |
-| 📱 Mobile | Auto/Manual Toggle | Switch between autonomous driving and app control |
-| 📱 Mobile | Live Sensor Display | Temperature, humidity, gas readings updated every 2s |
-| 💾 Database | MongoDB Persistence | All sensor readings, grid data, and alerts stored for analysis |
-| 🔄 Replay | Scan History | Re-watch the rover's entire mapping session step by step |
+| 🤖 **Autonomy** | Obstacle Avoidance | 7-angle ultrasonic sweep detects walls; up to 8 avoidance attempts per obstacle |
+| 🤖 **Autonomy** | Dead Reckoning | Tracks X, Y position and heading using motor timing (`SPEED_CM_PER_MS = 0.019`) |
+| 🤖 **Autonomy** | Scan-on-Distance | Automatically stops and full-scans every **40 cm** of forward travel |
+| 🤖 **Autonomy** | Periodic Upload | Forces a scan stop every **25 seconds** even if no obstacle detected |
+| 🌐 **Networking** | Single-TCP Protocol | Upload + command poll merged into one HTTP POST round-trip **(v4.5 innovation)** |
+| 🌐 **Networking** | WiFi Auto-Reconnect | Hard `AT+RST` reboot with 15s cooldown on connection loss |
+| 🌐 **Networking** | CLOSED-drain Fix | Waits for TCP `CLOSED` before `AT+CIPCLOSE` — eliminates zombie sockets |
+| 🌐 **Networking** | Ghost Filter | Ignores ultrasonic readings ≤ 3cm (sensor noise artifacts) |
+| 📊 **Dashboard** | 3D Occupancy Grid | Bresenham ray-traced map with walls, free space, and rover trail |
+| 📊 **Dashboard** | Live Sensor Charts | Real-time temperature, humidity, gas, and distance graphs via Recharts |
+| 📊 **Dashboard** | Alert System | Automatic **DANGER** (gas > 400 ppm) and **WARNING** (gas > 250 ppm) alerts |
+| 📊 **Dashboard** | Replay Mode | Re-watch the rover's entire mapping session step by step |
+| 📱 **Mobile** | D-Pad Control | Forward, Backward, Left, Right, Stop buttons via MIT App Inventor |
+| 📱 **Mobile** | Auto/Manual Toggle | Switch between autonomous driving and app control in real time |
+| 📱 **Mobile** | Live Sensor Display | Temperature, humidity, gas readings updated every 2 seconds |
+| 📱 **Mobile** | LED/Buzzer Control | Toggle headlight LED and alert buzzer from the app |
+| 💾 **Database** | MongoDB Persistence | All sensor readings, grid data, and alerts stored for post-analysis |
+| 🔄 **Replay** | Scan History | Last 200 full scan packets stored for complete session replay |
 
 ---
 
 ## 🏗 System Architecture
 
+The project follows a **three-layer IoT architecture** — Perception, Network, and Application — all connected over a shared 2.4 GHz WiFi LAN.
+
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        CLOUD / LOCAL NETWORK                        │
-│                                                                     │
-│  ┌──────────────┐     HTTP/WS      ┌──────────────────────────────┐ │
-│  │  📱 MIT App  │◄────────────────►│      🖥️ Node.js Server       │ │
-│  │  (Android)   │  GET /control    │      (Express + Socket.IO)   │ │
-│  │              │  GET /data       │                              │ │
-│  └──────────────┘                  │  ┌─────────┐ ┌────────────┐ │ │
-│                                    │  │gridMap.js│ │  MongoDB   │ │ │
-│  ┌──────────────┐     Socket.IO    │  │Bresenham │ │  Mongoose  │ │ │
-│  │  🌐 React    │◄────────────────►│  │Ray-Trace │ │            │ │ │
-│  │  Dashboard   │  map-update      │  └─────────┘ └────────────┘ │ │
-│  │  (Browser)   │  chart-update    │                              │ │
-│  └──────────────┘  raw-data        └──────────────┬───────────────┘ │
-│                                                   │                 │
-└───────────────────────────────────────────────────┼─────────────────┘
-                                                    │ POST /rover-data
-                                                    │ (WiFi via ESP8266)
-                                          ┌─────────▼─────────┐
-                                          │   🤖 Arduino UNO   │
-                                          │   + Motor Shield   │
-                                          │                    │
-                                          │  ┌──────┐ ┌─────┐ │
-                                          │  │Servo │ │DHT11│ │
-                                          │  │HC-SR04│ │MQ-2 │ │
-                                          │  └──────┘ └─────┘ │
-                                          │   4x DC Motors     │
-                                          │   ESP8266-01 WiFi  │
-                                          └────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         APPLICATION LAYER                                │
+│                                                                          │
+│   ┌──────────────┐      Socket.IO       ┌──────────────────────────────┐ │
+│   │  🌐 React    │◄═══════════════════►│      🖥️  Node.js Server      │ │
+│   │  Dashboard   │   map-update         │      Express + Socket.IO     │ │
+│   │  (Browser)   │   chart-update       │                              │ │
+│   │              │   raw-data           │   ┌──────────┐  ┌─────────┐ │ │
+│   │  • 3D Map    │   newAlert           │   │gridMap.js│  │MongoDB  │ │ │
+│   │  • Charts    │                      │   │Bresenham │  │Mongoose │ │ │
+│   │  • Alerts    │                      │   │Ray-Trace │  │         │ │ │
+│   └──────────────┘                      │   └──────────┘  └─────────┘ │ │
+│                                         │                              │ │
+│   ┌──────────────┐    HTTP GET          │   Routes:                    │ │
+│   │  📱 MIT App  │◄══════════════════►│   POST /rover-data           │ │
+│   │  (Android)   │   /control?cmd=     │   GET  /data                 │ │
+│   │  • D-Pad     │   /data             │   GET  /control?cmd=         │ │
+│   │  • Sensors   │   /auto?toggle=     │   GET  /auto?toggle=         │ │
+│   │  • LED/Auto  │   /led?state=       │   GET  /led?state=           │ │
+│   └──────────────┘                      └──────────────┬───────────────┘ │
+│                                                        │                 │
+└────────────────────────────────────────────────────────┼─────────────────┘
+                                                         │
+                            ═══════ NETWORK LAYER ═══════╪═══════
+                                                         │
+                                    POST /rover-data     │ WiFi 2.4 GHz
+                                    ← {ok, cmd} response │ via ESP8266 AT
+                                                         │
+                            ═══════ PERCEPTION LAYER ════╪═══════
+                                                         │
+                                               ┌─────────▼──────────┐
+                                               │   🤖 Arduino UNO    │
+                                               │   + L293D Shield    │
+                                               │                     │
+                                               │  ┌───────┐┌──────┐ │
+                                               │  │SG90   ││DHT11 │ │
+                                               │  │Servo  ││Temp  │ │
+                                               │  │+HC-SR04│Humid │ │
+                                               │  └───────┘└──────┘ │
+                                               │  ┌───────┐┌──────┐ │
+                                               │  │MQ-2   ││ESP   │ │
+                                               │  │Gas    ││8266  │ │
+                                               │  │Sensor ││WiFi  │ │
+                                               │  └───────┘└──────┘ │
+                                               │   4× DC BO Motors  │
+                                               │   4WD Chassis      │
+                                               └────────────────────┘
 ```
 
-### Data Flow (One Complete Cycle)
-1. **Rover drives** forward autonomously, tracking distance via dead reckoning
-2. **Every 40cm** (or 25 seconds), the rover **stops** and performs a **7-angle ultrasonic sweep**
-3. Servo detaches → ESP8266 wakes up → Rover **POSTs** sensor + scan JSON to `/rover-data`
-4. **Server** processes the scan with Bresenham ray-tracing, updates the occupancy grid
-5. Server **responds** with `{"ok":true, "cmd":"auto"}` — the rover reads this to know its mode
-6. Server **broadcasts** via Socket.IO to all connected browsers
-7. **React dashboard** updates the 3D map, charts, and alerts in real-time
-8. **MIT App** polls `/data` every 2 seconds for the latest sensor readings
-9. If a user presses a button on the app, it sends `GET /control?cmd=forward` → server sets `autoMode=false` → next rover POST gets `{"cmd":"forward"}` → rover enters manual mode
+### Data Flow — One Complete Scan Cycle
+
+| Step | Action | Actor |
+|---|---|---|
+| 1 | Rover drives forward autonomously, tracking X/Y via dead reckoning every 150ms | Arduino |
+| 2 | Every 40cm or 25s: rover stops and performs **7-angle ultrasonic sweep** (0°–180°) | Arduino + Servo |
+| 3 | Servo detaches. Arduino builds JSON: `{x, y, heading, scan, temp, hum, gas, distance}` | Arduino |
+| 4 | ESP8266 POSTs JSON to `/rover-data` on Node.js server via single TCP connection | ESP8266 |
+| 5 | Server processes scan with **Bresenham ray-tracing**; updates occupancy grid + MongoDB | Node.js |
+| 6 | Server responds: `{"ok":true, "cmd":"auto"}` — rover reads this to know its mode | Node.js → Arduino |
+| 7 | Server broadcasts updated grid + sensor data via **Socket.IO** to all browsers | Socket.IO |
+| 8 | React dashboard **re-renders** the 3D map, charts, and alerts in real time | React |
+| 9 | MIT App polls `/data` every 2s for live sensor readings | MIT App |
+| 10 | If user presses a button → `GET /control?cmd=forward` → server stores command → next rover POST gets `{"cmd":"forward"}` → rover enters manual mode | MIT App → Node.js → Arduino |
 
 ---
 
@@ -129,75 +196,115 @@ All data streams in real-time to a **3D web dashboard** that builds a live occup
 
 | # | Component | Specification | Purpose | Qty |
 |---|---|---|---|---|
-| 1 | Arduino UNO R3 | ATmega328P, 2KB SRAM, 32KB Flash | Main controller | 1 |
-| 2 | L298N Motor Shield (AFMotor) | 4-channel DC motor driver | Motor control | 1 |
-| 3 | DC Gear Motors | 3–6V, ~200 RPM | Rover propulsion | 4 |
-| 4 | Robot Car Chassis | 4WD acrylic platform | Structural frame | 1 |
-| 5 | HC-SR04 Ultrasonic Sensor | 2cm–400cm range, ±3mm accuracy | Distance + mapping | 1 |
-| 6 | SG90 Servo Motor | 180° rotation, 9g weight | Pans ultrasonic sensor | 1 |
-| 7 | DHT11 | 0–50°C, 20–90% RH, ±2°C | Temperature & Humidity | 1 |
-| 8 | MQ-2 Gas Sensor | Detects LPG, smoke, CO, alcohol | Air quality monitoring | 1 |
-| 9 | ESP8266-01 (ESP-01) | 802.11 b/g/n, AT commands, 3.3V | WiFi communication | 1 |
-| 10 | 1kΩ + 2.2kΩ Resistors | Through-hole, ¼W | Voltage divider for ESP RX | 1 each |
-| 11 | Breadboard + Jumper Wires | Standard 830-point | Prototyping connections | 1 |
-| 12 | 9V Battery / Battery Pack | 4×AA or 2×18650 | Power supply | 1 |
+| 1 | **Arduino UNO R3 SMD** | ATmega328P, 32KB Flash, **2KB SRAM** | Main microcontroller | 1 |
+| 2 | **L293D Motor Shield** (AFMotor) | 4-channel DC motor driver | Motor control | 1 |
+| 3 | **DC Gear Motors (BO)** | 3–6V, ~200 RPM | Rover propulsion | 4 |
+| 4 | **Robot Car Chassis** (4WD) | Acrylic platform, 4-wheel | Structural frame | 1 |
+| 5 | **HC-SR04 Ultrasonic** | 2–400cm range, ±3mm accuracy | Distance sensing + mapping | 1 |
+| 6 | **SG90 Servo Motor** | 180° rotation, 9g | Pans ultrasonic for sweep | 1 |
+| 7 | **DHT11 Sensor** | 0–50°C, 20–90% RH, ±2°C | Temperature & humidity | 1 |
+| 8 | **MQ-2 Gas Sensor** | LPG, smoke, CO, alcohol (100–10000 ppm) | Air quality monitoring | 1 |
+| 9 | **ESP8266-01** (ESP-01) | 802.11 b/g/n, AT commands, 3.3V | WiFi communication | 1 |
+| 10 | **18650 Li-ion Cells** | 2000mAh, 3.7V each | Primary power source | 4 |
+| 11 | **3S BMS Board** | 20A protection | Battery protection | 1 |
+| 12 | **LM2596 Buck Converter** | Input 4–35V, Output 1.25–30V | 5V for Arduino VIN | 1 |
+| 13 | **AMS1117-3.3 Regulator** | 3.3V 1A LDO | Clean 3.3V for ESP8266 | 1 |
+| 14 | **1kΩ + 2.2kΩ Resistors** | Through-hole, ¼W | Voltage divider for ESP RX | 1 each |
+| 15 | **LED + Buzzer** | Standard 5mm LED, 5V buzzer | Visual & audio alerts | 1 each |
+| 16 | **Breadboard + Jumpers** | 830-point mini breadboard | Prototyping connections | 1 set |
 
-### Power Requirements
-- **Arduino + Motors**: Powered via the motor shield's external terminal (7–12V recommended)
-- **ESP8266**: **Strictly 3.3V!** Using the Arduino's 3.3V pin is unreliable under motor load. A dedicated AMS1117 3.3V regulator is recommended for production.
-- **Sensors**: Powered from Arduino's 5V rail (DHT11, MQ-2, HC-SR04)
+### Power Architecture
+
+```
+  ┌──────────────────┐
+  │  4× 18650 Cells  │   11.1V nominal (12.6V charged)
+  │  3S1P / 2000mAh  │   Protected by 3S 20A BMS board
+  └────────┬─────────┘
+           │
+    ┌──────▼──────┐
+    │  3S BMS     │   Over-charge / over-discharge / short protection
+    └──────┬──────┘
+           │
+     ┌─────┴──────────────────────┐
+     │                            │
+  ┌──▼───────────┐      ┌────────▼────────┐
+  │ Motor Shield │      │ LM2596 Buck     │
+  │ EXT POWER    │      │ 12V → 5V        │
+  │ (4 motors)   │      └────────┬────────┘
+  └──────────────┘               │
+                          ┌──────┴─────┐
+                          │            │
+                    ┌─────▼─────┐  ┌──▼──────────┐
+                    │ Arduino   │  │ AMS1117-3.3  │
+                    │ VIN (5V)  │  │ 5V → 3.3V   │
+                    └───────────┘  └──────┬──────┘
+                                          │
+                                   ┌──────▼──────┐
+                                   │  ESP8266-01  │
+                                   │  (3.3V ONLY) │
+                                   └─────────────┘
+```
+
+> ⚠️ **CRITICAL:** The Arduino's onboard 3.3V pin (max 50mA) is **insufficient** for the ESP8266 under WiFi load. A dedicated AMS1117-3.3 regulator is mandatory — using the Arduino pin causes ESP8266 **brownouts** during WiFi transmission, corrupting data packets.
 
 ---
 
-## 🔌 Wiring Guide
+## 🔌 Complete Wiring Guide
 
-### Pin Map
+### Arduino Pin Map
 
-| Arduino Pin | Connected To | Notes |
-|---|---|---|
-| M1–M4 (Shield) | 4× DC Motors | Via AFMotor shield screw terminals |
-| Pin 10 (Shield SER2) | Servo Signal (Orange wire) | SG90 control wire |
-| A0 | HC-SR04 TRIG | Ultrasonic trigger |
-| A1 | HC-SR04 ECHO | Ultrasonic echo |
-| A2 | MQ-2 AO (Analog Out) | Gas sensor analog reading |
-| A3 | DHT11 DAT (Data) | Temperature/humidity data |
-| A4 | ESP8266 TX | SoftwareSerial RX (receive from ESP) |
-| A5 | → 1kΩ → node → 2.2kΩ → GND | Voltage divider output → ESP8266 RX |
+| Arduino Pin | Connected To | Direction | Function |
+|---|---|---|---|
+| M1–M4 (Shield) | 4× DC Motors | OUT | Via AFMotor shield screw terminals |
+| Pin 10 (Shield SER2) | Servo Signal (Orange) | OUT | SG90 control PWM |
+| A0 | HC-SR04 TRIG | OUT | Ultrasonic trigger pulse |
+| A1 | HC-SR04 ECHO | IN | Ultrasonic echo return |
+| A2 | MQ-2 AO (Analog Out) | IN | Gas concentration (0–1023 ADC) |
+| A3 | DHT11 DAT | IN/OUT | Temperature + humidity one-wire |
+| A4 | ESP8266 TX (direct wire) | IN | SoftwareSerial RX — 3.3V safe for Arduino |
+| A5 → Divider → ESP RX | ESP8266 RX via 1kΩ + 2.2kΩ | OUT | Voltage divider: 5V → 3.43V |
+| Pin 13 (optional) | LED via 220Ω | OUT | Alert indicator |
 
-### ESP8266-01 Pinout (Hold antenna UP, chip facing you)
+### ESP8266-01 Pinout
+
+Hold the module with the **gold zig-zag antenna pointing UP** and the **black chip facing you**:
 
 ```
-       (Gold Zig-Zag Antenna Points UP)
-       (Black Chip Visible on Top)
-
-Top Row:    [ TX  ]  [CH_PD]  [ RST ]  [ VCC ]
-Bottom Row: [ GND ]  [GPIO2]  [GPIO0]  [ RX  ]
+       ╔══════════════════════════╗
+       ║   ⚡ (Antenna Pattern)   ║
+       ║                          ║
+       ║      ┌──────────┐       ║
+       ║      │ Black IC │       ║
+       ║      └──────────┘       ║
+       ╚══════════════════════════╝
+        │    │    │    │    │    │    │    │
+       TX  CH_PD RST  VCC  GND GPIO2 GPIO0 RX
 ```
-
-### ESP8266-01 Wiring
 
 | ESP-01 Pin | Connect To | Why |
 |---|---|---|
-| VCC | 3.3V rail | ⚠️ **NEVER 5V — will destroy the module** |
-| GND | Ground rail | Common ground with Arduino |
-| CH_PD (EN) | 3.3V rail | Must be HIGH to enable the chip |
-| GPIO0 | 3.3V rail | Must be HIGH for normal operation (LOW = flash mode) |
-| TX | Arduino A4 (direct wire) | ESP sends data to Arduino — 3.3V safe for Arduino input |
-| RX | Voltage divider output | Arduino A5 is 5V — must be divided to ~3.3V |
-| RST | Not connected | Leave floating |
-| GPIO2 | Not connected | Leave floating |
+| **VCC** | AMS1117-3.3 output (3.3V) | ⚠️ **NEVER 5V — will permanently destroy the chip** |
+| **GND** | Common ground rail | Shared ground with Arduino and battery |
+| **CH_PD** (EN) | 3.3V rail | Must be **HIGH** to enable the chip |
+| **GPIO0** | 3.3V rail | **HIGH** = normal run; LOW = flash mode |
+| **TX** | Arduino A4 (direct wire) | 3.3V signal — safe for Arduino 5V digital input |
+| **RX** | Voltage divider output | Arduino 5V must be stepped down to ~3.3V |
+| **RST** | Not connected | Leave floating |
+| **GPIO2** | Not connected | Leave floating |
 
-### Voltage Divider Detail (A5 → ESP RX)
+### Voltage Divider Detail
+
+Arduino A5 outputs 5V, but the ESP8266 RX pin is strictly 3.3V. A simple resistor voltage divider steps it down:
 
 ```
-Arduino A5 ───[1kΩ]───●───[2.2kΩ]─── GND
-                       │
-                       └──► ESP8266 RX
+Arduino A5 ──── [1kΩ] ────●──── [2.2kΩ] ──── GND
+                           │
+                           └──► ESP8266 RX
 
-Output voltage = 5V × 2.2kΩ / (1kΩ + 2.2kΩ) = 3.43V ✅ Safe for ESP
+   Output = 5V × 2.2kΩ ÷ (1kΩ + 2.2kΩ) = 3.43V  ✅ Safe
 ```
 
-> **Note:** A 2kΩ resistor also works (gives 3.33V). The 2.2kΩ is a more common standard value and is equally safe.
+> **Note:** 2kΩ also works (gives 3.33V). 2.2kΩ is a more common standard value and is equally safe. Resistors have no polarity — orientation doesn't matter.
 
 ### DHT11 Wiring (3-Pin Module)
 
@@ -207,7 +314,7 @@ Output voltage = 5V × 2.2kΩ / (1kΩ + 2.2kΩ) = 3.43V ✅ Safe for ESP
 | DAT | Arduino A3 |
 | GND | Ground rail (breadboard −) |
 
-> If using the bare 4-pin sensor (no PCB), add a **10kΩ pull-up resistor** between DAT and VCC. The 3-pin module version has this resistor built-in.
+> If using the **bare 4-pin sensor** (no PCB), add a **10kΩ pull-up resistor** between DAT and VCC. The 3-pin module has this built-in.
 
 ---
 
@@ -215,141 +322,195 @@ Output voltage = 5V × 2.2kΩ / (1kΩ + 2.2kΩ) = 3.43V ✅ Safe for ESP
 
 | Layer | Technology | Version | Role |
 |---|---|---|---|
-| Firmware | Arduino C++ | v4.5 | Sensor reading, motor control, WiFi |
-| Backend | Node.js + Express | v5.2 | REST API, data processing |
-| Real-time | Socket.IO | v4.8 | WebSocket broadcasts to dashboard |
-| Database | MongoDB + Mongoose | v9.6 | Persistent storage of readings |
-| Frontend | React + Recharts | v19 | 3D map, live charts, alerts |
-| Mobile | MIT App Inventor | — | Android remote control app |
-| Grid Engine | Custom Bresenham | — | Occupancy mapping from ultrasonic |
+| **Firmware** | Arduino C++ | v4.5 | Sensor reading, motor control, WiFi AT commands |
+| **Backend** | Node.js + Express | v5.2 | REST API, data processing, command relay |
+| **Real-time** | Socket.IO | v4.8 | WebSocket broadcasts to dashboard |
+| **Database** | MongoDB + Mongoose | v9.6 | Persistent storage of all readings |
+| **Frontend** | React + Recharts | v19 | 3D occupancy map, live charts, alerts |
+| **Mobile** | MIT App Inventor 2 | — | Android remote control app |
+| **Grid Engine** | Custom `gridMap.js` | — | Bresenham ray-traced occupancy mapping |
+| **Simulation** | SimulIDE | — | Arduino circuit simulation |
+| **3D Modelling** | Tinkercad | — | Rover chassis design & documentation |
 
 ---
 
-## 🤖 Arduino Firmware (v4.5)
+## 🤖 Arduino Firmware v4.5
 
-The firmware (`rover_arduino/rover_arduino.ino`) handles everything the rover does physically.
+The firmware (`rover_arduino/rover_arduino.ino` — 758 lines) handles everything the rover does physically.
 
 ### Operating Modes
 
 | Mode | Trigger | Behavior |
 |---|---|---|
-| **Autonomous** (default) | Boot / `cmd: "auto"` from server | Drives forward, avoids obstacles, scans every 40cm |
-| **Manual** | Any movement command from MIT App | Executes app commands, polls server every 5s for mode switch |
+| **Autonomous** (default) | Boot / `cmd:"auto"` in POST response | Drives forward, avoids obstacles, scans every 40cm |
+| **Manual** | Any movement command from MIT App | Executes app commands, polls server every 5s |
 
 ### Autonomous Loop Logic
 
 ```
 loop():
-  1. Read ultrasonic distance
-  2. If distance ≤ 40cm → handleObstacle()
-     a. Full scan stop (7-angle sweep + upload)
-     b. Back up, look left/right, turn toward more open direction
-     c. Repeat up to 8 times until path is clear
-  3. Else → moveForward()
-     a. Update dead-reckoning position (X, Y, heading)
-     b. If 40cm traveled since last scan → doScanStop()
-     c. If 25 seconds since last upload → doScanStop()
+  ├─ if (!autoMode) → runManualMode() [blocks until auto restored]
+  │
+  ├─ distance = readPing()
+  ├─ if distance ≤ 40cm → handleObstacle()
+  │   ├─ doScanStop() [full 7-angle sweep + upload + poll]
+  │   ├─ if now in manual mode → return (poll switched us)
+  │   ├─ moveBackward(400ms)
+  │   ├─ lookRight() + lookLeft()
+  │   ├─ turn toward more open side
+  │   └─ repeat up to 8 times until path clear
+  │
+  ├─ else → moveForward()
+  │   ├─ update dead-reckoning (X, Y, heading) every 150ms
+  │   ├─ if 40cm traveled → doScanStop()
+  │   └─ if 25s elapsed → doScanStop()
 ```
 
-### Scan Stop Procedure
+### Scan Stop Procedure (The Core)
 
-```
-doScanStop():
-  1. Read DHT11 (temp, humidity) and MQ-2 (gas)
-  2. Stop motors
-  3. Servo sweep: 0°, 30°, 60°, 90°, 120°, 150°, 180°
-     → Record distance at each angle
-  4. Detach servo (prevents SoftwareSerial interference)
-  5. Build JSON body + HTTP headers as separate Strings (avoids OOM)
-  6. POST to /rover-data → Read "cmd" from response
-  7. Flush ESP buffer → Reattach servo
-```
-
-### Single-TCP Protocol (v4.5 Innovation)
-
-Previous versions used **two separate TCP connections** per cycle — one POST for sensor data and one GET for command polling. This caused the notorious `"ESP8266 closed connection early"` error because:
-
-1. The Arduino UNO has only **2KB SRAM** — concatenating a ~400-byte HTTP request into one `String` caused out-of-memory (OOM), silently truncating the payload
-2. The ESP8266 has a small TCP buffer — back-to-back connections with no clean reset left zombie sockets
-
-**v4.5 fixes both issues:**
-- The server's POST response now includes the command: `{"ok":true, "cmd":"auto"}`
-- The Arduino sends headers and body as **separate Strings** (never concatenated)
-- The Arduino **waits for the server's HTTP response** before closing the socket
-- Result: **zero separate GET connections, zero ghost TCP sockets, zero "closed early" errors**
+| Step | Action |
+|---|---|
+| 1 | `updatePositionNow()` — snapshot latest dead-reckoning position |
+| 2 | Read DHT11 (temp, humidity) and MQ-2 analog (gas ppm) |
+| 3 | `moveStop()` — release all 4 motors |
+| 4 | **Servo sweep**: 0°, 30°, 60°, 90°, 120°, 150°, 180° — 400ms settle + `ping_cm()` at each |
+| 5 | `myservo.detach()` — **critical**: prevents SoftwareSerial timer conflict with servo PWM |
+| 6 | `delay(1000)` — motors fully stop, power stabilizes for ESP8266 |
+| 7 | `espAlive()` check — send `AT`, verify `OK` within 2s; reconnect with `AT+RST` if dead |
+| 8 | Build HTTP headers + JSON body as **separate Strings** (avoids OOM) |
+| 9 | `AT+CIPSEND` — send headers first, then body sequentially |
+| 10 | Parse response body for `"cmd":"..."` using `String.indexOf()` |
+| 11 | Drain until `CLOSED` — guarantees TCP socket fully released |
+| 12 | `myservo.attach(10)` — re-attach servo; reset counters; resume driving |
 
 ### Dead Reckoning
 
-The rover estimates its position using elapsed motor time:
+```cpp
+SPEED_CM_PER_MS = 0.019  // calibrated experimentally
 
-```
-SPEED_CM_PER_MS = 0.019  (calibrated experimentally)
-
-Every 150ms while driving forward:
-  distance_moved = elapsed_ms × SPEED_CM_PER_MS
-  roverX += distance_moved × sin(heading_radians)
-  roverY += distance_moved × cos(heading_radians)
+// Every 150ms while driving forward:
+distance_moved = elapsed_ms × SPEED_CM_PER_MS
+roverX += distance_moved × sin(heading_radians)
+roverY += distance_moved × cos(heading_radians)
 ```
 
-> **Limitation:** Dead reckoning drifts over time due to wheel slippage. The map is approximate — accurate enough for environmental monitoring, not for precision navigation.
+> **Limitation:** Dead reckoning drifts over time due to wheel slippage. Accurate enough for environmental monitoring — not for precision navigation. Future improvement: wheel encoders.
 
-### Memory Optimization
+### Memory Optimization (2KB SRAM Budget)
 
-The Arduino UNO's 2KB SRAM is the tightest constraint in the entire system:
+The Arduino UNO's **2048 bytes of SRAM** is the tightest constraint in the entire system:
 
-| Technique | Savings |
-|---|---|
-| `F()` macro on all `Serial.print()` strings | ~800 bytes → Flash instead of RAM |
-| Split header/body transmission (no concatenation) | Prevents OOM crashes during upload |
-| 7-angle sweep instead of 13 | Cuts scan JSON size by 46% |
-| String-based JSON parsing (`indexOf`) | Avoids ArduinoJson library overhead |
-| `byte` instead of `int` for pin constants | 1 byte vs 2 bytes per variable |
+| Technique | Bytes Saved | Details |
+|---|---|---|
+| `F()` macro on all `Serial.print()` | ~800 bytes | Moves string literals from SRAM → Flash |
+| Split header/body transmission | ~400 bytes peak | No single String exceeds ~200 bytes |
+| 7-angle sweep instead of 13 | ~120 bytes | Scan JSON is 46% shorter |
+| `String.indexOf()` JSON parsing | ~200 bytes | Avoids ArduinoJson library overhead |
+| `byte` instead of `int` for pins | ~20 bytes | 1 byte vs 2 bytes per constant |
 
 ---
 
-## 🖥 Node.js Backend Server (v4.1)
+## 🖥 Node.js Backend Server v4.1
 
-The server (`backend/server.js`) is the brain of the cloud system — it receives rover data, processes it into an occupancy grid, stores it in MongoDB, and broadcasts it to all connected clients.
+The server (`backend/server.js`) is the central data hub — receives rover uploads, processes occupancy grids, stores data in MongoDB, and pushes live updates to all clients.
 
 ### Key Design Decisions
 
 | Decision | Rationale |
 |---|---|
-| `express.text()` on `/rover-data` instead of `express.json()` | ESP8266 closes TCP sockets unpredictably — `express.json()` throws `request.aborted` errors that spam the console. Using `express.text()` + manual `JSON.parse()` lets us catch and log malformed packets gracefully. |
-| Error handler placed **after** all routes | Express requires 4-argument error handlers at the bottom. Placing it before routes caused every request to be intercepted as an error. |
-| Deep clone before `io.emit()` | Socket.IO can silently fail if objects contain shared/mutable references. `JSON.parse(JSON.stringify())` creates safe copies. |
-| Fire-and-forget async for DB writes | MongoDB writes don't block the HTTP response — the Arduino gets its command immediately. |
+| `express.text()` on `/rover-data` | `express.json()` throws `request.aborted` when ESP8266 closes TCP early — `express.text()` + manual `JSON.parse()` catches truncated packets gracefully |
+| Error handler **after** all routes | Express requires 4-argument error handlers at the bottom; placing before routes intercepted all valid requests |
+| POST response includes `cmd` | Eliminates separate GET poll — one TCP round-trip per scan cycle |
+| `JSON.parse(JSON.stringify())` before `io.emit()` | Prevents silent Socket.IO failures from shared mutable object references |
+| Fire-and-forget async DB writes | MongoDB writes don't block HTTP response — Arduino gets its command immediately |
+| 15s WiFi cooldown after obstacle avoidance | Prevents back-to-back uploads when rover is clearing obstacles |
 
 ### In-Memory Buffers
 
-| Buffer | Size | Purpose |
+| Buffer | Max Size | Purpose |
 |---|---|---|
-| `packetLog[]` | Last 50 packets | Raw packet inspector on dashboard |
-| `chartBuffer[]` | Last 60 data points | Live sensor chart data |
-| `occupancyGrid{}` | Unlimited (keyed by cell) | The actual room map |
-| `scanHistory[]` | Last 200 scans | Replay mode |
+| `packetLog[]` | 50 packets | Raw packet inspector |
+| `chartBuffer[]` | 60 points | Live sensor chart data |
+| `occupancyGrid{}` | Unlimited (keyed) | The actual room map |
+| `scanHistory[]` | 200 scans | Replay mode |
+| `sensorGrid{}` | Unlimited (keyed) | Per-cell environmental averages |
+
+---
+
+## 🗺 Occupancy Grid Mapping Algorithm
+
+The heart of the mapping system is `backend/gridMap.js` — a **probabilistic occupancy grid** built using **Bresenham's line algorithm** for ray-tracing.
+
+### How It Works
+
+```
+For each scan stop:
+  7 ultrasonic readings at servo angles: 0°, 30°, 60°, 90°, 120°, 150°, 180°
+
+For each ray:
+  1. world_angle = rover_heading + (servo_angle − 90°)
+  2. hit_x = roverX + distance × sin(world_angle)
+     hit_y = roverY + distance × cos(world_angle)
+  3. Convert (roverX, roverY) and (hit_x, hit_y) to grid cells (÷ CELL_CM)
+  4. Bresenham line trace: rover cell → hit cell → list of intermediate cells
+  5. All intermediate cells: probability −= 0.12 (ray passed through = FREE)
+  6. Endpoint cell: probability += 0.22 (ray terminated here = WALL)
+  7. Clamp to [0.03, 0.97]; classify as WALL if prob > 0.65 AND hits ≥ 2
+```
+
+### Grid Cell Data Structure
+
+```javascript
+occupancyGrid["cx,cy"] = {
+  cx, cy,              // Grid coordinates
+  prob: 0.5,           // Occupancy probability (0 = free, 1 = wall)
+  hits: 0,             // Number of ray endpoints landing here
+  type: 'unknown',     // 'free' | 'wall' | 'suspect' | 'unknown'
+  firstSeen: Date,     // When first observed
+  lastSeen: Date       // Most recent observation
+}
+```
+
+### Sensor Overlay (Environmental Heatmaps)
+
+Each grid cell also accumulates rolling averages of environmental data:
+- **`avgTemp`** — Temperature readings at that location
+- **`avgGas`** — Gas concentration
+- **`avgHum`** — Humidity
+
+This enables **spatial heatmaps** — the dashboard can color cells by environmental conditions, showing exactly which areas of the room are hotter, more humid, or have higher gas readings.
+
+### Tuning Constants
+
+| Constant | Value | Effect |
+|---|---|---|
+| `CELL_CM` | 25 | Grid resolution — 25cm × 25cm per cell |
+| `FREE_STEP` | 0.12 | Probability decrease per ray pass-through |
+| `OCC_BOOST` | 0.22 | Probability increase per ray hit |
+| `WALL_MIN_HITS` | 2 | Minimum hits before confirming wall |
+| `MAX_DIST` | 400 | HC-SR04 max range — beyond this = noise |
 
 ---
 
 ## 📊 React Web Dashboard
 
-The frontend (`frontend/src/`) is a dark-themed, modern SPA built with React.
+A sleek, dark-themed, modern SPA built with React, featuring glassmorphism design elements and real-time data streaming.
 
 ### Pages
 
-| Page | File | Features |
+| Page | Component | Key Features |
 |---|---|---|
-| **Dashboard** | `Dashboard.js` | Live vital stats (temp, humidity, gas), connection status, rover position, packet counter |
+| **Dashboard** | `Dashboard.js` | Live vital stats (temp, humidity, gas), connection status, rover position (X/Y/heading), packet counter |
 | **3D Map** | `Map3D.js` | Occupancy grid visualization, rover trail, wall/free-space coloring, scan ray overlay, simulate button |
-| **Analytics** | `History.js` | Historical area/line/bar charts using Recharts, filterable by metric |
-| **Alerts** | `Alerts.js` | Real-time alert feed — DANGER (gas > 400 ppm) and WARNING (gas > 250 ppm) |
+| **Analytics** | `History.js` | Historical area/line/bar charts via Recharts — filterable by metric and time |
+| **Alerts** | `Alerts.js` | Real-time alert feed — DANGER (red, gas > 400) and WARNING (amber, gas > 250) |
 
 ### Design System
 
-- **Font**: JetBrains Mono (monospace) + Inter (sans-serif) via Google Fonts
-- **Color Palette**: Deep navy backgrounds (`#030812`), cyan accent (`#00D4FF`), red alerts (`#ff4d4f`)
-- **Effects**: Glassmorphism cards, backdrop blur, CSS animations, status dot pulse
-- **Responsive**: Sidebar navigation, fluid grid layouts
+- **Typography**: JetBrains Mono (monospace) + Inter (sans-serif) via Google Fonts
+- **Palette**: Deep navy backgrounds (`#030812`), electric cyan accent (`#00D4FF`), status colors (green/amber/red)
+- **Effects**: Glassmorphism cards, `backdrop-filter: blur()`, CSS pulse animations, status dot indicators
+- **Layout**: Fixed sidebar navigation, fluid grid, fully responsive
 
 ### Socket.IO Events
 
@@ -368,60 +529,68 @@ The frontend (`frontend/src/`) is a dark-themed, modern SPA built with React.
 
 ## 📱 MIT App Inventor Mobile App
 
-The Android app provides a handheld remote control interface for the rover.
+The Android app provides a handheld remote control interface for the rover — built with MIT App Inventor 2.
 
 ### Screen Layout
 
 ```
-┌──────────────────────────────────┐
-│     🛰 ENVIRONMENTAL ROVER       │  ← Title (VerticalArrangement)
-│       🟢 Online                  │  ← Status Label
-├──────────────────────────────────┤
-│  🌡️ Temp: 28.5°C  💧 Hum: 65%  │  ← Sensor Dashboard
-│  💨 Gas: 210 ppm                 │    (TableArrangement 2×3)
-├──────────────────────────────────┤
-│           [ ▲ ]                  │
-│     [ ◄ ] [STOP] [ ► ]          │  ← D-Pad Control
-│           [ ▼ ]                  │    (TableArrangement 3×3)
-├──────────────────────────────────┤
-│     [ AUTO ON ]  [ AUTO OFF ]    │  ← Mode Toggle
-│     [ LED ON  ]  [ LED OFF  ]    │  ← LED Control
-└──────────────────────────────────┘
+┌──────────────────────────────────────┐
+│       🛰 ENVIRONMENTAL ROVER         │  ← Title Label
+│         🟢 Online                    │  ← Status Label
+├──────────────────────────────────────┤
+│                                      │
+│  🌡️ Temp: 28.5°C    💧 Hum: 65%     │  ← Sensor Dashboard
+│  💨 Gas: 210 ppm    📐 Dist: 45cm   │    (TableArrangement 2×3)
+│                                      │
+├──────────────────────────────────────┤
+│                                      │
+│            [ ▲ FWD ]                 │
+│                                      │
+│     [ ◄ L ]  [ STOP ]  [ R ► ]      │  ← D-Pad Control
+│                                      │    (TableArrangement 3×3)
+│            [ ▼ BWD ]                 │
+│                                      │
+├──────────────────────────────────────┤
+│                                      │
+│     [ AUTO ON ]    [ AUTO OFF ]      │  ← Mode Toggle
+│     [ LED ON  ]    [ LED OFF  ]      │  ← LED/Buzzer Control
+│                                      │
+└──────────────────────────────────────┘
 ```
 
-### Block Logic (MIT App Inventor)
+### Block Logic
 
-| Component Event | HTTP Request |
-|---|---|
-| `Clock1.Timer` (every 2s) | `GET http://<IP>:5000/data` → Parse JSON → Update labels |
-| `btn_forward.Click` | `GET http://<IP>:5000/control?cmd=forward` |
-| `btn_backward.Click` | `GET http://<IP>:5000/control?cmd=backward` |
-| `btn_left.Click` | `GET http://<IP>:5000/control?cmd=left` |
-| `btn_right.Click` | `GET http://<IP>:5000/control?cmd=right` |
-| `btn_stop.Click` | `GET http://<IP>:5000/control?cmd=stop` |
-| `btn_auto_on.Click` | `GET http://<IP>:5000/auto?toggle=true` |
-| `btn_auto_off.Click` | `GET http://<IP>:5000/auto?toggle=false` |
-| `btn_led_on.Click` | `GET http://<IP>:5000/led?state=on` |
-| `btn_led_off.Click` | `GET http://<IP>:5000/led?state=off` |
+| Component Event | HTTP Request URL | Purpose |
+|---|---|---|
+| `Clock1.Timer` (2s interval) | `GET http://<IP>:5000/data` | Fetch & display latest sensor readings |
+| `btn_forward.Click` | `GET http://<IP>:5000/control?cmd=forward` | Drive forward |
+| `btn_backward.Click` | `GET http://<IP>:5000/control?cmd=backward` | Drive backward |
+| `btn_left.Click` | `GET http://<IP>:5000/control?cmd=left` | Turn left |
+| `btn_right.Click` | `GET http://<IP>:5000/control?cmd=right` | Turn right |
+| `btn_stop.Click` | `GET http://<IP>:5000/control?cmd=stop` | Emergency stop |
+| `btn_auto_on.Click` | `GET http://<IP>:5000/auto?toggle=true` | Switch to autonomous |
+| `btn_auto_off.Click` | `GET http://<IP>:5000/auto?toggle=false` | Switch to manual |
+| `btn_led_on.Click` | `GET http://<IP>:5000/led?state=on` | Turn on LED |
+| `btn_led_off.Click` | `GET http://<IP>:5000/led?state=off` | Turn off LED |
 
 ---
 
-## 📡 API Reference
+## 📡 Complete API Reference
 
 ### Arduino → Server
 
-| Method | Endpoint | Body | Response | Purpose |
-|---|---|---|---|---|
-| `POST` | `/rover-data` | `{"x","y","heading","scan":[{"a","d"},...],"temp","hum","gas","distance"}` | `{"ok":true, "cmd":"auto"\|"forward"\|...}` | Main data upload + command poll |
+| Method | Endpoint | Body | Response |
+|---|---|---|---|
+| `POST` | `/rover-data` | `{"x","y","heading","scan":[{"a","d"},...],"temp","hum","gas","distance"}` | `{"ok":true, "cmd":"auto"|"forward"|...}` |
 
 ### MIT App → Server
 
-| Method | Endpoint | Params | Response | Purpose |
-|---|---|---|---|---|
-| `GET` | `/data` | — | `{"temp","humidity","gas","distance","autoMode","currentCommand","ledStatus"}` | Sensor polling |
-| `GET` | `/control` | `?cmd=forward\|backward\|left\|right\|stop` | `"Command forward received"` | Movement command |
-| `GET` | `/auto` | `?toggle=true\|false` | `{"success":true, "autoMode":true}` | Mode toggle |
-| `GET` | `/led` | `?state=on\|off` | `"LED on"` | LED control |
+| Method | Endpoint | Parameters | Response |
+|---|---|---|---|
+| `GET` | `/data` | — | `{"temp","humidity","gas","distance","autoMode","currentCommand","ledStatus"}` |
+| `GET` | `/control` | `?cmd=forward\|backward\|left\|right\|stop` | `"Command forward received"` |
+| `GET` | `/auto` | `?toggle=true\|false` | `{"success":true, "autoMode":true}` |
+| `GET` | `/led` | `?state=on\|off` | `"LED on"` |
 
 ### Dashboard → Server
 
@@ -431,7 +600,7 @@ The Android app provides a handheld remote control interface for the rover.
 | `GET` | `/chart-data` | Chart buffer (last 60 readings) |
 | `GET` | `/replay` | Scan history for replay mode |
 | `GET` | `/alerts` | Alert history from MongoDB |
-| `GET` | `/health` | Server status, coverage %, cell counts |
+| `GET` | `/health` | Server status, coverage %, cell counts, uptime |
 | `GET` | `/packets` | Raw packet log (last 50) |
 | `POST` | `/simulate` | Inject fake scan data for testing |
 | `POST` | `/reset` | Clear all map data and counters |
@@ -440,254 +609,258 @@ The Android app provides a handheld remote control interface for the rover.
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| `POST` | `/sensor-data` | Old-format sensor upload (temp, humidity, gas) |
-| `GET` | `/sensor-data` | MongoDB historical query (last 60 readings) |
+| `POST` | `/sensor-data` | Old-format sensor upload |
+| `GET` | `/sensor-data` | MongoDB historical query (last 60) |
 | `GET` | `/rover/command/raw` | Plain-text command fallback for old firmware |
 
 ---
 
-## 🗺 Occupancy Grid Algorithm
+## 🔗 Communication Protocol Deep-Dive
 
-The heart of the mapping system is `backend/gridMap.js` — a probabilistic occupancy grid built using **Bresenham's line algorithm** for ray-tracing.
+### The "ESP8266 Closed Connection Early" Problem — Full Story
 
-### How It Works
+This was the **single most challenging bug** in the entire project, requiring fixes across all three system layers.
+
+#### The Symptom
+```
+[MongoDB] ✅ Connected
+⚠️ [Network] ESP8266 closed connection early. Ignoring packet.
+⚠️ [Network] ESP8266 closed connection early. Ignoring packet.
+⚠️ [Network] ESP8266 closed connection early. Ignoring packet.
+```
+No data appeared on the dashboard. The server was alive but received nothing useful.
+
+#### Root Cause Chain
 
 ```
-For each scan stop, the rover provides 7 ultrasonic distance readings
-at angles: 0°, 30°, 60°, 90°, 120°, 150°, 180°
-
-For each ray:
-  1. Calculate world-angle = rover_heading + (servo_angle - 90)
-  2. Calculate hit point: (x + d×sin(θ), y + d×cos(θ))
-  3. Convert rover position and hit point to grid cells (25cm × 25cm each)
-  4. Trace a Bresenham line from rover cell to hit cell
-  5. All cells along the line → decrease probability (FREE)
-  6. The endpoint cell → increase probability (WALL)
+1. Arduino UNO has only 2KB SRAM
+                    ↓
+2. Code concatenated HTTP headers (~150 bytes) + JSON body (~250 bytes)
+   into ONE String variable (~400 bytes)
+                    ↓
+3. Arduino's String class needs DOUBLE memory during concatenation
+   (old string + new string temporarily coexist)
+                    ↓
+4. Sensors + motors + libraries already consuming ~1.5KB
+   → Only ~500 bytes remain → can't handle ~800 byte temporary allocation
+                    ↓
+5. String is SILENTLY TRUNCATED — Arduino tells ESP "send 400 bytes"
+   but only provides 150 bytes of actual content
+                    ↓
+6. ESP8266 sends a truncated HTTP request to the server
+                    ↓
+7. express.json() sees incomplete body → throws "request.aborted"
+                    ↓
+8. Error handler was BEFORE routes → intercepted every request
+                    ↓
+9. Dashboard: permanently OFFLINE. Zero data received.
 ```
 
-### Grid Cell Properties
+#### The Three-Layer Fix (v4.5)
 
-| Property | Type | Description |
+| Layer | Problem | Fix |
 |---|---|---|
-| `prob` | Float (0.03–0.97) | Occupancy probability (0 = free, 1 = wall) |
-| `hits` | Integer | Number of times a ray endpoint landed here |
-| `type` | String | `"free"`, `"wall"`, `"suspect"`, or `"unknown"` |
-| `firstSeen` | Timestamp | When this cell was first observed |
-| `lastSeen` | Timestamp | Last observation time |
-
-### Tuning Constants
-
-| Constant | Value | Effect |
-|---|---|---|
-| `CELL_CM` | 25 | Grid resolution — each cell is 25cm × 25cm |
-| `FREE_STEP` | 0.12 | How much probability decreases per ray pass-through |
-| `OCC_BOOST` | 0.22 | How much probability increases per ray hit |
-| `WALL_MIN_HITS` | 2 | Minimum ray hits before confirming a wall |
-| `MAX_DIST` | 400 | HC-SR04 maximum range (cm) — readings beyond this are ignored |
-
-### Sensor Overlay
-
-Each grid cell also accumulates environmental data:
-- `avgTemp` — Rolling average of temperature readings at that location
-- `avgGas` — Rolling average of gas concentration
-- `avgHum` — Rolling average of humidity
-
-This enables **spatial heatmaps** — you can see which corners of the room are hotter, more humid, or have higher gas readings.
+| **Arduino** | Single massive String caused OOM | Send `header` and `body` as **separate** Strings — never concatenated |
+| **Arduino** | Socket closed before server response | Wait for server HTTP response + `CLOSED` confirmation before `AT+CIPCLOSE` |
+| **Server** | `express.json()` crashed on truncated payload | Route-level `express.text()` + manual `JSON.parse()` with try/catch |
+| **Server** | Error handler intercepted valid requests | Moved 4-argument error handler to **after** all routes (Express requirement) |
+| **Server** | `res.send()` on dead socket threw second error | Changed to plain `return` — don't attempt to respond on aborted connections |
 
 ---
 
-## 🔗 Communication Protocol
+## 🧪 Simulation & 3D Modelling
 
-### The "ESP8266 Closed Connection Early" Problem
+### SimulIDE Circuit Simulation
 
-This was the single most challenging bug in the entire project. Here's the full story:
+A complete SimulIDE circuit simulation was built replicating the Arduino UNO connected to DHT11, MQ-2, HC-SR04, and L293D motor driver. The simulation validated:
+- Serial output formatting
+- Sensor read sequences and timing
+- Motor direction logic
+- ADC reading ranges for MQ-2
 
-**Symptoms:** The server would print `"ESP8266 closed connection early"` for every Arduino upload attempt, and no data would appear on the dashboard.
+### Tinkercad 3D Model
 
-**Root Cause Chain:**
-1. The Arduino UNO has only **2KB of SRAM**
-2. The original code concatenated HTTP headers (~150 bytes) + JSON body (~250 bytes) into one `String` variable (~400 bytes)
-3. Arduino's `String` class needs **double the memory** during concatenation (old + new copy)
-4. With sensors, motors, and libraries already consuming ~1.5KB, the remaining ~500 bytes couldn't handle a ~800-byte temporary allocation
-5. The `String` was **silently truncated** — the Arduino told the ESP8266 "send 400 bytes" but only provided 150
-6. The ESP8266 sent a truncated HTTP request — the server saw an incomplete body and threw `request.aborted`
-7. `express.json()` middleware bubbled this up as an error
-
-**Fix (v4.5):** Three-layer solution:
-1. **Arduino:** Send headers and body as separate `String` variables (never concatenate them)
-2. **Arduino:** Wait for server HTTP response before closing TCP socket
-3. **Server:** Use `express.text()` with manual `JSON.parse()` on `/rover-data` — catches truncated packets gracefully instead of crashing
+A detailed 3D model of the rover was built in Tinkercad documenting:
+- Acrylic chassis dimensions and motor mount positions
+- Servo + HC-SR04 front bracket placement
+- Arduino + breadboard platform layout
+- Battery tray and ESP8266 mounting position
+- Wire routing between components
 
 ---
 
 ## 🚀 Setup & Installation
 
 ### Prerequisites
-- **Node.js** v16+ ([download](https://nodejs.org/))
-- **MongoDB** (local or [Atlas cloud](https://www.mongodb.com/atlas))
-- **Arduino IDE** 2.x ([download](https://www.arduino.cc/en/software))
-- **Git** ([download](https://git-scm.com/))
+
+| Requirement | Download Link |
+|---|---|
+| Node.js v16+ | [nodejs.org](https://nodejs.org/) |
+| MongoDB | [mongodb.com/try](https://www.mongodb.com/try/download/community) or [Atlas Cloud](https://www.mongodb.com/atlas) |
+| Arduino IDE 2.x | [arduino.cc/en/software](https://www.arduino.cc/en/software) |
+| Git | [git-scm.com](https://git-scm.com/) |
+| Android device | Same 2.4GHz WiFi network |
 
 ### Step 1: Clone the Repository
+
 ```bash
 git clone https://github.com/ChiragSimepurushkar/CLOUD_MONITORED_ENVIRONMENTAL_ROVER.git
 cd CLOUD_MONITORED_ENVIRONMENTAL_ROVER
 ```
 
-### Step 2: Backend Server
+### Step 2: Start the Backend Server
+
 ```bash
 cd backend
 npm install
 node server.js
 ```
-Note the **Network IP** printed in the terminal (e.g., `http://192.168.0.104:5000`). You'll need this for both the Arduino and the mobile app.
 
-### Step 3: React Frontend
+> 📝 **Note the Network IP** printed in the terminal (e.g., `http://192.168.0.104:5000`). You'll need this for Steps 3 and 4.
+
+### Step 3: Start the React Frontend
+
 ```bash
 cd frontend
 npm install
 npm start
 ```
-Opens at `http://localhost:3000`. The dashboard will show "OFFLINE" until the rover connects.
 
-### Step 4: Arduino Firmware
-1. Open `rover_arduino/rover_arduino.ino` in the Arduino IDE
-2. Install required libraries via **Sketch → Include Library → Manage Libraries**:
+Opens at `http://localhost:3000`. The dashboard will show **OFFLINE** until the rover connects.
+
+### Step 4: Flash the Arduino
+
+1. Open `rover_arduino/rover_arduino.ino` in Arduino IDE
+2. **Install libraries** via `Sketch → Include Library → Manage Libraries`:
    - `Adafruit Motor Shield library` (AFMotor)
    - `NewPing` by Tim Eckel
-   - `DHT sensor library` by Adafruit (+ Adafruit Unified Sensor)
+   - `DHT sensor library` by Adafruit (**+ Adafruit Unified Sensor** when prompted)
    - `Servo` (built-in)
-3. Update the network config at the top of the file:
+3. **Update network config** at the top:
    ```cpp
    const char SSID[]      = "Your_WiFi_Name";
    const char PASS[]      = "Your_WiFi_Password";
-   const char SERVER_IP[] = "192.168.0.104";  // ← Your laptop's IP
+   const char SERVER_IP[] = "192.168.0.104";  // ← Your laptop's IP from Step 2
+   const int  SERVER_PORT = 5000;
    ```
-4. Select **Board: Arduino Uno** and the correct **Port**
+4. Select **Board: Arduino Uno**, correct **Port**
 5. Click **Upload**
 
-> ⚠️ Your WiFi must be **2.4GHz**. The ESP8266-01 does not support 5GHz networks.
+> ⚠️ Your WiFi **must be 2.4GHz**. The ESP8266-01 does **not** support 5GHz networks.
 
-### Step 5: MIT App Inventor
-1. Import or build the app in [MIT App Inventor](https://ai2.appinventor.mit.edu/)
-2. Update all URLs in the blocks to your server IP
-3. Build → `.apk` → Install on Android device
-4. Ensure your phone is on the **same WiFi network** as the server
+### Step 5: Setup the MIT App
+
+1. Go to [MIT App Inventor](https://ai2.appinventor.mit.edu/)
+2. Import the `.aia` project file
+3. Update all server URL strings to `http://<YOUR_SERVER_IP>:5000`
+4. **Build → Android App (.apk)** → Install on your phone
+5. Ensure your phone is on the **same WiFi network** as the server
+
+### Quick Verification Checklist
+
+| Check | Expected Result |
+|---|---|
+| Arduino Serial Monitor | `WiFi Connected → Initial position scan → ROVER ACTIVE` |
+| Server terminal | `[#1][arduino-scan] X=0 Y=0 Hdg=0° T=28°C H=65% G=210ppm Rays=7` |
+| Dashboard | Status: **ONLINE** · Map shows first scan · Charts update |
+| MIT App | Sensor values refresh every 2s · D-pad commands work |
 
 ---
 
 ## 🧪 Component Testing Guide
 
-Before running the full rover, test each component individually using the included test script. This helps isolate hardware issues.
+Before running the full rover, test each component individually using the included comprehensive test script.
 
-### All-in-One Test
+### All-in-One Test Script
 
-A comprehensive test script is available that tests all 6 components sequentially:
-- **Test 1:** DHT11 — 5 temperature/humidity readings
-- **Test 2:** MQ-2 — Gas baseline + "blow test"
-- **Test 3:** HC-SR04 — 8 distance readings + hand detection test
-- **Test 4:** Servo — Sweep center → right → center → left → center
-- **Test 5:** Motors — Forward, backward, right turn, left turn (2s each)
-- **Test 6:** ESP8266 — AT command, firmware version, WiFi scan
+The test script runs 6 sequential tests, then offers an interactive menu:
 
-After all tests run, type `1–6` in the Serial Monitor to re-run any individual test.
+| Test | Component | What to Look For |
+|---|---|---|
+| **Test 1** | DHT11 | 5 temperature/humidity readings · NaN = bad wiring |
+| **Test 2** | MQ-2 | Gas baseline (~100–300 clean air) · Blow test (should spike > 400) |
+| **Test 3** | HC-SR04 | 8 distance readings · Hand at 10cm → should read ~10 |
+| **Test 4** | Servo | Sweep center→right→center→left→center · Visual check |
+| **Test 5** | Motors | Forward 2s → Backward 2s → Right 1s → Left 1s |
+| **Test 6** | ESP8266 | `AT` → `OK` · Firmware version · WiFi network scan |
 
-> **Important:** All `Serial.print()` strings use the `F()` macro to store text in Flash memory instead of RAM. Without this, the test script exceeds the UNO's 2KB SRAM limit.
+After all tests complete, type `1`–`6` in Serial Monitor to re-run any individual test.
 
-### Individual Sensor Tests
-
-| Test | What to Check |
-|---|---|
-| **Ultrasonic** | Place hand at 10cm → should read ~10cm. Open space → reads 250 (max) |
-| **DHT11** | Should read room temperature (20–35°C). If `NaN` → check DAT wire on A3 |
-| **MQ-2** | Baseline 100–300 in clean air. Blow near sensor → should spike above 400 |
-| **Servo** | Should physically sweep left-center-right. If not → check Pin 10 / SER2 connector |
-| **Motors** | All 4 wheels should spin. If wrong direction → swap wire polarity on that motor |
-| **ESP8266** | Should respond `OK` to AT command. If no response → check 3.3V power, TX→A4, RX→divider |
+> **Important:** All `Serial.print()` strings use the `F()` macro to keep the test script within the 2KB SRAM limit.
 
 ---
 
 ## 🧗 Development Journey & Challenges
 
-This project evolved through multiple phases, each solving a critical challenge:
+This project evolved through **8 development phases**, each solving a critical challenge:
 
-### Phase 1: Basic Obstacle Avoidance
-Started with a simple 4WD car using HC-SR04 + servo for obstacle detection. The car would drive forward, detect walls within 15cm, and turn toward the more open direction.
-
-### Phase 2: Environmental Sensing
-Added DHT11 (temperature/humidity) and MQ-2 (gas) sensors. The challenge was **SRAM overflow** — simply adding `Serial.println()` statements pushed the code past the 2KB RAM limit. Solved with the `F()` macro.
-
-### Phase 3: WiFi Communication
-Integrated the ESP8266-01 via SoftwareSerial. Major challenges:
-- **Voltage divider required** — ESP8266 RX is 3.3V, Arduino outputs 5V
-- **SoftwareSerial conflicts with Servo** — both use timer interrupts. Solved by detaching the servo before any WiFi operations.
-- **ESP8266 power issues** — Arduino's 3.3V pin can't supply enough current under motor load
-
-### Phase 4: Cloud Dashboard
-Built the Node.js backend and React frontend. Implemented the Bresenham ray-tracing occupancy grid for real-time room mapping.
-
-### Phase 5: Mobile App Integration
-Added MIT App Inventor endpoints for manual control. The key challenge was **merging two separate TCP connections into one** to prevent socket exhaustion on the ESP8266.
-
-### Phase 6: The "Closed Connection Early" War
-The most difficult bug in the entire project. Required understanding:
-- Arduino's `String` class memory allocation behavior
-- ESP8266 AT command TCP lifecycle
-- Express.js middleware ordering rules
-- Node.js body-parser error propagation
-
-The final fix touched **all three layers** (Arduino, server middleware, server error handler) simultaneously.
-
----
-
-## 🔧 Troubleshooting
-
-| Problem | Likely Cause | Fix |
+| Phase | Challenge | Solution |
 |---|---|---|
-| `ESP8266 closed connection early` | Arduino OOM during string concatenation | Upgrade to firmware v4.5 (sends header/body separately) |
-| ESP8266 doesn't respond to `AT` | Wrong baud rate or insufficient power | Try `esp8266.begin(115200)`. Use external 3.3V regulator. |
-| `DHT.h: No such file or directory` | Missing library | Arduino IDE → Sketch → Include Library → Manage Libraries → Install "DHT sensor library" by Adafruit |
-| `data section exceeds available space` | RAM overflow (>2048 bytes) | Wrap all `Serial.print("text")` in `F()`. Use `byte` instead of `int` for pins. |
-| Servo jitters during WiFi operations | SoftwareSerial timer interrupt conflict | Always call `myservo.detach()` before any ESP8266 AT commands |
-| Motor spins wrong direction | Wiring polarity reversed | Swap the two wires for that motor on the shield terminal |
-| Dashboard shows "OFFLINE" | Socket.IO not connected | Check that the frontend is pointing to the correct server IP/port |
-| App commands don't respond instantly | Arduino polls for commands only at scan stops | This is expected — commands arrive within 5–25 seconds depending on driving state |
-| `MongoDB ⚠️ Not available` | MongoDB not running | Start MongoDB service, or set `MONGO_URI` in `.env` to an Atlas cluster |
+| **Phase 1: Obstacle Avoidance** | SRAM overflow causing random reboots when adding `Serial.print()` | `F()` macro — moved all string literals to Flash (~800 bytes freed) |
+| **Phase 2: Sensing** | DHT11 returning `NaN` intermittently on first read | 3-reading warm-up in `setup()`; `isnan()` guard → replace with 0 |
+| **Phase 3: WiFi** | Servo jittering/resetting during AT command traffic | `myservo.detach()` before every ESP8266 AT sequence |
+| **Phase 3: WiFi** | ESP8266 RX pin damaged by 5V Arduino TX | Voltage divider (1kΩ + 2.2kΩ) verified with multimeter |
+| **Phase 4: Dashboard** | Socket.IO silently not emitting updated grid | Deep clone: `JSON.parse(JSON.stringify())` before every `io.emit()` |
+| **Phase 4: Dashboard** | Express error handler intercepting all requests | Moved 4-argument handler to **after** all routes |
+| **Phase 5: Mobile App** | Two TCP connections per cycle → "closed early" | Merged poll into POST response body — single TCP (v4.5) |
+| **Phase 6: JSON** | AVR `snprintf` printing `?` for all `%f` float values | Replaced all formatting with `dtostrf(value, 6, 1, buf)` |
+| **Phase 6: JSON** | `express.json()` crashing on truncated ESP payload | Route-level `express.text()` + manual try/catch `JSON.parse()` |
+| **Phase 7: WiFi Stability** | ESP8266 dying after 3–4 uploads | CLOSED-drain wait loop + `AT+RST` hard reboot on 3 failures |
+| **Phase 8: Power** | Motor inrush current causing Arduino brownout | Staggered motor start (30ms per motor) + buck converter |
 
 ---
 
-## 📁 Project Structure
+## 🔧 Troubleshooting Quick Reference
+
+| Symptom | Most Likely Cause | Fix |
+|---|---|---|
+| `ESP8266 closed connection early` | Arduino OOM during String concatenation | Upgrade to firmware v4.5 (split header/body) |
+| `?` characters in uploaded JSON | AVR `%f` bug in `snprintf` | Use `dtostrf()` for all float fields |
+| ESP8266 no response to `AT` | Insufficient 3.3V or wrong baud rate | AMS1117-3.3 dedicated regulator; try 115200 baud |
+| `DHT.h: No such file or directory` | Missing library | Arduino IDE → Library Manager → "DHT sensor library" by Adafruit |
+| `data section exceeds available space` | SRAM overflow (> 2048 bytes) | `F()` on all `Serial.print()`; `byte` for pin constants |
+| Servo jitters during WiFi | SoftwareSerial timer interrupt conflict | Always `myservo.detach()` before AT commands |
+| Motors spin wrong direction | Polarity reversed | Swap wires for that motor on shield terminal |
+| Dashboard shows OFFLINE | Socket.IO can't reach server | Check server IP matches laptop LAN IP; verify port 5000 |
+| App commands not instant | Arduino polls at scan stops only | Expected — commands arrive within 5–25 seconds |
+| MQ-2 reads 0 or full-scale | Sensor needs 24–48h burn-in | Pre-heat for 24h; calibrate in clean air |
+| `MongoDB ⚠️ Not available` | MongoDB not running | Start `mongod` service or use Atlas URI in `.env` |
+
+---
+
+## 📁 Project File Structure
 
 ```
 CLOUD_MONITORED_ENVIRONMENTAL_ROVER/
 │
-├── rover_arduino/
-│   └── rover_arduino.ino      # Firmware v4.5 — autonomy, sensing, WiFi
+├── 📂 rover_arduino/
+│   └── rover_arduino.ino          # Firmware v4.5 — autonomy, sensors, WiFi, scan
 │
-├── backend/
-│   ├── server.js               # Express + Socket.IO server v4.1
-│   ├── gridMap.js              # Bresenham occupancy grid engine
-│   ├── package.json            # Node.js dependencies
-│   └── models/                 # (Optional) Mongoose model files
+├── 📂 backend/
+│   ├── server.js                   # Express + Socket.IO server v4.1
+│   ├── gridMap.js                  # Bresenham occupancy grid engine (228 lines)
+│   ├── package.json                # Dependencies: express, mongoose, socket.io, cors
+│   ├── .env                        # MONGO_URI, PORT (not committed)
+│   └── 📂 models/                  # Mongoose model files
 │
-├── frontend/
-│   ├── public/
+├── 📂 frontend/
+│   ├── 📂 public/
 │   │   └── index.html
-│   └── src/
-│       ├── App.js              # Root component — sidebar, routing, socket
-│       ├── App.css             # (Reset — all styles in index.css)
-│       ├── index.css           # Full design system — dark theme, glass, animations
-│       ├── index.js            # React entry point
-│       └── pages/
-│           ├── Dashboard.js    # Live vital stats & connection health
-│           ├── Map3D.js        # 3D occupancy grid visualization
-│           ├── History.js      # Historical sensor charts (Recharts)
-│           ├── Alerts.js       # Gas alert feed (DANGER / WARNING)
-│           └── Control.js      # (Reserved for future web-based control)
+│   └── 📂 src/
+│       ├── App.js                  # Root — sidebar, routing, Socket.IO client
+│       ├── App.css                 # Reset (all styles in index.css)
+│       ├── index.css               # Full design system — dark theme, glass, animations
+│       ├── index.js                # React entry point
+│       └── 📂 pages/
+│           ├── Dashboard.js        # Live vital stats & connection health
+│           ├── Map3D.js            # 3D occupancy grid visualization (46KB)
+│           ├── History.js          # Historical sensor charts (Recharts)
+│           ├── Alerts.js           # Gas alert feed (DANGER/WARNING)
+│           └── Control.js          # Reserved for web-based control
 │
-├── mockup/                     # UI mockup files
+├── 📂 mockup/                      # UI mockup files
 ├── .gitignore
-└── README.md                   # ← You are here
+└── README.md                       # ← You are here
 ```
 
 ---
@@ -696,24 +869,68 @@ CLOUD_MONITORED_ENVIRONMENTAL_ROVER/
 
 | Feature | Difficulty | Description |
 |---|---|---|
-| LIDAR upgrade | 🟡 Medium | Replace HC-SR04 with RPLidar for 360° scans and cm-level accuracy |
-| SLAM algorithm | 🔴 Hard | Implement simultaneous localization and mapping to correct dead-reckoning drift |
-| Cloud deployment | 🟢 Easy | Deploy server to Render/Railway with MongoDB Atlas for internet-accessible dashboard |
-| Camera feed | 🟡 Medium | Add ESP32-CAM for live video streaming to the dashboard |
-| Path planning | 🔴 Hard | A* algorithm for efficient room coverage instead of random exploration |
-| OTA firmware updates | 🟡 Medium | Push Arduino code updates over WiFi instead of USB |
-| Environmental heatmap | 🟢 Easy | Color the occupancy grid cells by temperature/gas on the dashboard |
-| Multi-rover support | 🔴 Hard | Multiple rovers mapping the same space collaboratively |
+| 🎯 LIDAR Upgrade | 🟡 Medium | Replace HC-SR04 with RPLidar for 360° scans at cm-level accuracy |
+| 🧠 SLAM Algorithm | 🔴 Hard | Simultaneous Localization and Mapping to correct dead-reckoning drift |
+| ☁️ Cloud Deployment | 🟢 Easy | Deploy to Render/Railway + MongoDB Atlas for internet-accessible dashboard |
+| 📷 Camera Feed | 🟡 Medium | ESP32-CAM for live video streaming alongside the occupancy map |
+| 🗺 Path Planning (A*) | 🔴 Hard | Efficient room-coverage algorithm replacing random exploration |
+| 📡 OTA Firmware Updates | 🟡 Medium | Push Arduino code updates over WiFi instead of USB |
+| ⚙️ Wheel Encoders | 🟡 Medium | Replace dead-reckoning with encoder-based odometry |
+| 🌡 Environmental Heatmap | 🟢 Easy | Color grid cells by temperature/gas readings on dashboard |
+| 🗣 Voice Alerts | 🟢 Easy | Browser Web Speech API reads out DANGER alerts |
+| 🤖 Multi-Rover Support | 🔴 Hard | Multiple rovers mapping the same space collaboratively |
 
 ---
 
-## 👥 Team & Credits
+## 👥 Team Contributions
 
-**GEC IoT Engineering Capstone Project**
+### Chirag Nikant Simepurushkar (24B-CO-015) — *Hardware Lead & Mapping Engine*
+- Complete physical assembly: Arduino UNO + L293D Shield + all sensors (DHT11, MQ-2, HC-SR04, ESP8266, servo, LED, buzzer)
+- Built and tested 4WD chassis: 4 BO motors, voltage divider, BMS board, power architecture
+- Implemented and calibrated HC-SR04 + SG90 servo obstacle detection; dead-reckoning system
+- Diagnosed and fixed the complete **v4.5 bug chain**: OOM → split transmission; `%f` → `dtostrf()`; `express.json()` → `express.text()`; zombie sockets → CLOSED-drain
+- Designed `gridMap.js`: 25cm Bresenham ray-tracing, probabilistic occupancy update, sensor heatmap overlay
+- Built React Three.js 3D visualization with BoxGeometry cells, rover marker, dual color mapping
 
-Built with ❤️ using Arduino, ESP8266, Node.js, React, MongoDB, and MIT App Inventor.
+### Girish Vishwanath Gawde (24B-CO-023) — *Simulation & 3D Modelling*
+- Created SimulIDE circuit simulation replicating Arduino UNO with all sensors
+- Built detailed Tinkercad 3D rover model: acrylic base, motor mounts, ultrasonic bracket, battery tray
+- Cross-referenced physical layout with 3D model for accurate documentation
+
+### Akshay Ajit Kumar Pillai (24B-CO-005) — *MERN Stack Web Dashboard*
+- Set up Node.js + Express backend with MongoDB for rover data storage
+- Implemented Socket.IO for real-time push of sensor data and grid map updates
+- Built React frontend: live Recharts gauges, control panel, alert history table
+- Added rover control API routes (`/control`, `/auto`, `/led`) for MIT App integration
+
+### Harsh Sadanand Raikar (24B-CO-025) — *Mobile App Development*
+- Designed Android control app in MIT App Inventor 2: D-pad, sensor dashboard, hardware toggles
+- Implemented HTTP GET web components for two-way communication with Node.js server
+- Configured background polling (Clock component) for live sensor readings every 2s
+- Integrated device-level alerts for hazardous MQ-2 readings
 
 ---
+
+## 📚 References
+
+1. Adafruit Motor Shield V1 Library — [learn.adafruit.com/adafruit-motor-shield](https://learn.adafruit.com/adafruit-motor-shield)
+2. NewPing Library — Tim Eckel — [github.com/livetronic/Arduino-NewPing](https://github.com/livetronic/Arduino-NewPing)
+3. DHT Sensor Library — Adafruit — [github.com/adafruit/DHT-sensor-library](https://github.com/adafruit/DHT-sensor-library)
+4. ESP8266 AT Command Reference v2.2.0 — Espressif Systems
+5. Bresenham, J.E. (1965). *Algorithm for computer control of a digital plotter*. IBM Systems Journal, 4(1), 25-30.
+6. Thrun, S., Burgard, W., & Fox, D. (2005). *Probabilistic Robotics*. MIT Press.
+7. Socket.IO v4 Documentation — [socket.io/docs/v4](https://socket.io/docs/v4)
+8. React Three Fiber — [docs.pmnd.rs/react-three-fiber](https://docs.pmnd.rs/react-three-fiber)
+9. MongoDB Mongoose Documentation — [mongoosejs.com/docs](https://mongoosejs.com/docs/)
+10. MIT App Inventor 2 Documentation — [ai2.appinventor.mit.edu](https://ai2.appinventor.mit.edu/)
+
+---
+
+<div align="center">
+
+**Built with ❤️ by SE COMP Batch A — Goa College of Engineering — 2024–2025**
 
 *Last updated: June 2026*
-]]>
+
+</div>
+

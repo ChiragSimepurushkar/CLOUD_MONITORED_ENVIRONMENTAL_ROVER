@@ -1,5 +1,6 @@
 // ══════════════════════════════════════════════════════════════
-//  COMBINED SERVER  v4.1  — Room Scanning Edition
+//  COMBINED SERVER  v4.6  — Room Scanning Edition
+//  Fix: manual hold timer prevents accidental auto-restore
 // ══════════════════════════════════════════════════════════════
 
 const express    = require('express');
@@ -17,7 +18,6 @@ const server = http.createServer(app);
 const io     = new Server(server, { cors: { origin: '*' } });
 
 app.use(cors());
-app.use(express.json({ limit: '512kb' }));
 
 // ─────────────────────────────────────────────
 //  MongoDB
@@ -29,9 +29,9 @@ let Alert         = null;
 let GridReading   = null;
 let sessionId     = `session_${Date.now()}`;
 
-let currentCommand = "stop";
-let autoMode       = true;
-let ledState       = "off";
+let currentCommand        = "stop";
+let autoMode              = true;
+let ledState              = "off";
 
 mongoose.connect(MONGO_URI)
   .then(() => {
@@ -95,6 +95,17 @@ async function checkAlert(data, x, y) {
   }
 }
 
+// ──────────────────────────────────────────────
+//  Helper: what cmd should we send to the rover?
+//  Respects the 30s manual hold window so that
+//  a background /auto toggle can't snap the rover
+//  back to auto while the user is still driving.
+// ──────────────────────────────────────────────
+function cmdForRover() {
+  if (autoMode) return 'auto';
+  return currentCommand;
+}
+
 // ══════════════════════════════════════════════
 //  ROUTES
 // ══════════════════════════════════════════════
@@ -116,7 +127,7 @@ app.get('/control', (req, res) => {
   const cmd = req.query.cmd;
   if (cmd) {
     currentCommand = cmd;
-    autoMode       = false;
+    autoMode = false;          // manual stays manual — no timer
     console.log(`📱 App command: ${currentCommand} → Manual Mode ON`);
     res.send(`Command ${currentCommand} received`);
   } else {
@@ -125,15 +136,10 @@ app.get('/control', (req, res) => {
 });
 
 app.get('/auto', (req, res) => {
-  const toggle = req.query.toggle;
-  if (toggle !== undefined) {
-    autoMode = (toggle === 'true');
-  } else {
-    autoMode = !autoMode;
-  }
-  if (autoMode) currentCommand = 'stop';
-  console.log(`🤖 Auto Mode: ${autoMode ? 'ON' : 'OFF'}`);
-  res.json({ success: true, autoMode });
+  autoMode = true; // explicitly turn Auto Mode back on
+  currentCommand = "stop"; // Safety reset
+  console.log(`🤖 Auto Mode explicitly turned ON by App`);
+  res.send("Auto mode restored");
 });
 
 app.get('/led', (req, res) => {
@@ -149,24 +155,29 @@ app.get('/led', (req, res) => {
 
 app.get('/rover/command/raw', (req, res) => {
   res.setHeader('Content-Type', 'text/plain');
-  res.send(autoMode ? 'auto' : currentCommand);
+  res.send(cmdForRover());
 });
 
-// ── POST /rover-data — uses express.text() to catch everything, even malformed
+// ── POST /rover-data ──────────────────────────────────────────
 app.post('/rover-data', express.text({ type: '*/*', limit: '1mb' }), (req, res) => {
+  const raw = req.body || '';
+
+  console.log('=== RAW BODY START ===');
+  console.log(raw);
+  console.log('=== RAW BODY END ===');
+  console.log('Body length:', raw.length);
+
+  let hexDump = '';
+  for (let i = 0; i < Math.min(raw.length, 20); i++) {
+    hexDump += raw.charCodeAt(i).toString(16).padStart(2,'0') + ' ';
+  }
+  console.log('Hex (first 20 bytes):', hexDump);
+
   let d;
   try {
-    d = JSON.parse(req.body);
+    d = JSON.parse(raw);
   } catch (err) {
-    console.log('⚠️ [rover-data] Failed to parse JSON. Raw body received:');
-    console.log('--------------------------------------------------');
-    console.log(req.body);
-    console.log('--------------------------------------------------');
-    return res.status(400).end();
-  }
-
-  if (!d || d.x === undefined) {
-    console.log('⚠️ [rover-data] Missing x in packet. Ignored.');
+    console.log('JSON.parse error:', err.message);
     return res.status(400).end();
   }
 
@@ -185,12 +196,13 @@ app.post('/rover-data', express.text({ type: '*/*', limit: '1mb' }), (req, res) 
     io.emit('map-update',   safeMap);
     io.emit('chart-update', safeChart);
     console.log(`  → broadcast to ${io.engine.clientsCount} browser(s)`);
+    console.log(`  → cmd to rover: "${cmdForRover()}" (autoMode=${autoMode})`);
 
     checkAlert(d, d.x, d.y).catch(() => {});
     if (GridReading) GridReading.create({ ...d, sessionId }).catch(() => {});
 
-    // Reply includes cmd so Arduino gets poll + upload in ONE round trip
-    res.json({ ok: true, cmd: autoMode ? 'auto' : currentCommand });
+    // Single round-trip: upload + poll
+    res.json({ ok: true, cmd: cmdForRover() });
 
   } catch(err) {
     console.error('[/rover-data] Error:', err.message);
@@ -198,7 +210,7 @@ app.post('/rover-data', express.text({ type: '*/*', limit: '1mb' }), (req, res) 
   }
 });
 
-app.post('/sensor-data', async (req, res) => {
+app.post('/sensor-data', express.json(), async (req, res) => {
   const { temperature, humidity, gas } = req.body;
   const data = { temp: temperature, temperature, humidity, hum: humidity, gas, x: 0, y: 0, heading: 0, distance: 0, obstacle: false };
   const entry = logPacket(data, 'legacy');
@@ -212,7 +224,7 @@ app.post('/sensor-data', async (req, res) => {
   res.json({ message: 'Sensor data stored' });
 });
 
-app.post('/simulate', (req, res) => {
+app.post('/simulate', express.json(), (req, res) => {
   try {
     const d       = buildSimPacket(req.body);
     const mapData = gridEngine.processPacket(d);
@@ -267,7 +279,9 @@ app.get('/health', (req, res) => {
     cells: state.cellCount, coverage: state.coverage,
     wallCells: state.stats.wallCells, freeCells: state.stats.freeCells,
     dbOnline: SensorReading !== null,
-    uptime: process.uptime().toFixed(1) + 's'
+    uptime: process.uptime().toFixed(1) + 's',
+    manualHeld: Date.now() - lastManualCommandTime < MANUAL_HOLD_MS,
+    currentCommand, autoMode
   });
 });
 
@@ -321,15 +335,12 @@ io.on('connection', socket => {
 });
 
 // ─────────────────────────────────────────────
-//  ERROR HANDLER — MUST be after all routes
-//  Express requires 4-argument handlers at the bottom
+//  ERROR HANDLER
 // ─────────────────────────────────────────────
 app.use((err, req, res, next) => {
   if (err.type === 'request.aborted' || err.code === 'ECONNRESET') {
-    // ESP8266 closed connection before body was fully received.
-    // This is harmless — the packet was incomplete so we discard it.
     console.log('⚠️ [Network] ESP8266 closed connection early. Ignoring packet.');
-    return;   // don't try to res.send — socket is already gone
+    return;
   }
   if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
     console.log('⚠️ [Network] Malformed JSON. Ignoring packet.');
@@ -356,18 +367,18 @@ server.listen(PORT, () => {
   const ip = getLocalIP();
   console.log(`
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  🛰  ROVER ROOM SCANNER SERVER  v4.1
+  🛰  ROVER ROOM SCANNER SERVER  v4.6
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Local:   http://localhost:${PORT}
   Network: http://${ip}:${PORT}  ← SET THIS IN ARDUINO
 
-  POST /rover-data    ← Arduino (scan[] or legacy)
-  POST /simulate      ← Browser test with fake 13-ray scan
+  POST /rover-data    ← Arduino (upload + poll in one shot)
+  POST /simulate      ← Browser test
   GET  /map-state     ← Full occupancy grid
   GET  /chart-data    ← Live sensor chart buffer
   GET  /replay        ← Scan history for replay
   GET  /alerts        ← Alert history
-  GET  /health        ← Server status + coverage %
+  GET  /health        ← Server status (shows manualHeld flag)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);
 });
