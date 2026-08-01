@@ -837,13 +837,14 @@ CLOUD_MONITORED_ENVIRONMENTAL_ROVER/
 │   └── rover_arduino.ino          # Firmware v4.5 — autonomy, sensors, WiFi, scan
 │
 ├── 📂 backend/
-│   ├── server.js                   # Express + Socket.IO server v4.1
+│   ├── server.js                   # Express + Socket.IO server v4.6
 │   ├── gridMap.js                  # Bresenham occupancy grid engine (228 lines)
 │   ├── package.json                # Dependencies: express, mongoose, socket.io, cors
 │   ├── .env                        # MONGO_URI, PORT (not committed)
 │   └── 📂 models/                  # Mongoose model files
 │
 ├── 📂 frontend/
+│   ├── craco.config.js             # Webpack config — suppress source-map warnings
 │   ├── 📂 public/
 │   │   └── index.html
 │   └── 📂 src/
@@ -858,7 +859,21 @@ CLOUD_MONITORED_ENVIRONMENTAL_ROVER/
 │           ├── Alerts.js           # Gas alert feed (DANGER/WARNING)
 │           └── Control.js          # Reserved for web-based control
 │
-├── 📂 mockup/                      # UI mockup files
+├── 📂 mockup/                      # MIT App Inventor mobile UI mockup
+│   ├── index.html                  # Mockup HTML structure
+│   ├── style.css                   # Mockup styles — phone bezel, glassmorphism
+│   └── app.js                      # Mockup interactivity — simulated sensor data
+│
+├── 📂 simulation/                  # Hardware simulation & 3D modelling
+│   ├── 📂 3D_model/
+│   │   ├── link.txt                # Tinkercad 3D model URL
+│   │   └── 📂 Screenshoots/        # 3D model screenshots
+│   └── 📂 circuit/
+│       ├── circuit.sim1            # SimulIDE circuit simulation file
+│       ├── project.ino             # Simulation-specific Arduino sketch
+│       ├── 📂 build/               # Compiled firmware (.hex, .elf, .eep)
+│       └── 📂 screenshots&video/   # Circuit simulation recordings & screenshots
+│
 ├── .gitignore
 └── README.md                       # ← You are here
 ```
@@ -930,7 +945,7 @@ CLOUD_MONITORED_ENVIRONMENTAL_ROVER/
 
 **Built with ❤️ by SE COMP Batch A — Goa College of Engineering — 2024–2025**
 
-*Last updated: June 2026*
+*Last updated: August 2026*
 
 </div>
 

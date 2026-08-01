@@ -26,12 +26,12 @@
 #define SERVO_CENTER   100
 
 // ══════════════════════════════════════════════════════════════
-//  NETWORK CONFIG
+//  NETWORK CONFIG  — ⚠️ Replace with YOUR WiFi & server details
 // ══════════════════════════════════════════════════════════════
-const char SSID[]      = "Redmi115G";
-const char PASS[]      = "Chirag@123";
-const char SERVER_IP[] = "10.210.236.155";
-const int  SERVER_PORT = 5000;
+const char SSID[]      = "YOUR_WIFI_SSID";       // ← Your WiFi network name
+const char PASS[]      = "YOUR_WIFI_PASSWORD";    // ← Your WiFi password
+const char SERVER_IP[] = "YOUR_SERVER_IP";        // ← IP of machine running Node.js (e.g. "192.168.1.100")
+const int  SERVER_PORT = 5000;                    // ← Must match backend port
 
 // ── Timing ────────────────────────────────────────────────────
 #define UPLOAD_EVERY     25000UL
